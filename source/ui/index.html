@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https: http:; media-src music-local: 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'"
+    />
+    <title>Music Tools · 音乐整理工作台</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="titlebar">
+        <div class="brand">
+          <span class="brand-mark"
+            ><img src="assets/icon.svg" alt="" width="34" height="34" /></span
+          ><strong>Music Tools</strong><span class="brand-divider"></span
+          ><span class="brand-caption">音乐整理工作台</span>
+        </div>
+        <div class="window-actions">
+          <button
+            data-action="theme"
+            class="icon-button"
+            aria-label="切换深浅主题"
+            title="切换主题"
+            data-icon="moon"
+          ></button
+          ><span class="window-divider"></span
+          ><button
+            data-window="minimize"
+            class="icon-button"
+            aria-label="最小化"
+            data-icon="minus"
+          ></button
+          ><button
+            data-window="maximize"
+            class="icon-button"
+            aria-label="最大化或还原"
+            data-icon="square"
+          ></button
+          ><button
+            data-window="close"
+            class="icon-button close-window"
+            aria-label="关闭窗口"
+            data-icon="close"
+          ></button>
+        </div>
+      </header>
+      <div class="workspace">
+        <aside class="sidebar">
+          <div class="workspace-label">WORKSPACE <span>本地工作区</span></div>
+          <button class="nav-item active" data-filter="all">
+            <span data-icon="grid"></span>全部音频 <b id="count-all">0</b>
+          </button>
+          <button class="nav-item" data-filter="missing">
+            <span data-icon="sparkle"></span>待补全 <b id="count-missing">0</b>
+          </button>
+          <button class="nav-item" data-filter="draft">
+            <span data-icon="edit"></span>待写入 <b id="count-draft">0</b>
+          </button>
+          <button class="nav-item" data-filter="done">
+            <span data-icon="check-circle"></span>已完成
+            <b id="count-done">0</b>
+          </button>
+          <div class="side-separator"></div>
+          <div class="workspace-label">工具与记录</div>
+          <button class="nav-item" data-action="tools">
+            <span data-icon="sliders"></span>批量工具
+          </button>
+          <button class="nav-item" data-action="history">
+            <span data-icon="history"></span>写入历史
+          </button>
+          <button class="nav-item" data-action="settings">
+            <span data-icon="settings"></span>偏好设置
+          </button>
+          <div class="sidebar-bottom">
+            <div class="local-badge">
+              <span data-icon="shield"></span>
+              <div>
+                <strong>本地编辑 · 自动备份</strong
+                ><small>每一次写入都可以恢复</small>
+              </div>
+            </div>
+            <button class="text-button muted" data-action="help">
+              <span data-icon="help"></span>使用说明与快捷键
+            </button>
+            <div class="version">PORTABLE EDITION <span>v0.1</span></div>
+          </div>
+        </aside>
+        <main class="main-area" id="main">
+          <section class="page-heading">
+            <div>
+              <div class="eyebrow">YOUR MUSIC, BEAUTIFULLY ORGANIZED</div>
+              <h1 id="page-title">
+                把音乐，整理成喜欢的样子<span class="title-dot">.</span>
+              </h1>
+              <p>补全封面、标签与歌词，让每一首歌都有完整的归属。</p>
+            </div>
+            <div class="import-actions">
+              <button class="button secondary" data-action="import-folder">
+                <span data-icon="folder"></span>导入文件夹</button
+              ><button class="button primary" data-action="import">
+                <span data-icon="plus"></span>添加音频
+              </button>
+            </div>
+          </section>
+          <section class="workflow">
+            <div class="workflow-step">
+              <span class="step-number">01</span
+              ><span
+                ><strong>导入音频</strong
+                ><small>文件 / 文件夹 / 拖放</small></span
+              >
+            </div>
+            <span class="step-arrow" data-icon="arrow-right"></span>
+            <div class="workflow-step">
+              <span class="step-number">02</span
+              ><span
+                ><strong>联网补全</strong
+                ><small>多来源，选更合适的结果</small></span
+              >
+            </div>
+            <span class="step-arrow" data-icon="arrow-right"></span>
+            <div class="workflow-step">
+              <span class="step-number">03</span
+              ><span
+                ><strong>预览并写入</strong
+                ><small>核对草稿，原文件自动备份</small></span
+              >
+            </div>
+            <div class="workflow-tip">
+              <span data-icon="sparkle"></span>让整理也轻一点
+            </div>
+          </section>
+          <section class="library-surface">
+            <div class="library-toolbar">
+              <div class="library-label">
+                <span data-icon="grid"></span><strong>音频队列</strong
+                ><span class="count-pill" id="queue-count">0 首</span>
+              </div>
+              <label class="search-box"
+                ><span data-icon="search"></span
+                ><input
+                  id="library-search"
+                  placeholder="搜索歌曲、艺术家、专辑…"
+                  aria-label="搜索队列" /></label
+              ><button
+                class="icon-button"
+                data-action="refresh"
+                aria-label="刷新全部封面和标签"
+                title="刷新全部封面与标签"
+                data-icon="refresh"
+              ></button
+              ><label class="sort-label"
+                ><select id="sort" aria-label="排序方式">
+                  <option value="import">导入顺序</option>
+                  <option value="title">按标题</option>
+                  <option value="artist">按艺术家</option>
+                  <option value="album">按专辑</option>
+                </select></label
+              >
+            </div>
+            <div class="queue-actions">
+              <label class="select-all"
+                ><input type="checkbox" id="select-all" />全选
+                <span id="selection-count"></span></label
+              ><span class="queue-actions-divider"></span
+              ><button class="text-button" data-action="batch-match">
+                <span data-icon="sparkle"></span>补全所选</button
+              ><button class="text-button" data-action="tools">
+                <span data-icon="sliders"></span>批量编辑
+              </button>
+              <div class="spacer"></div>
+              <button class="text-button" data-action="remove">
+                <span data-icon="minus-circle"></span>移除所选</button
+              ><button class="text-button danger-subtle" data-action="clear">
+                <span data-icon="trash"></span>清空队列
+              </button>
+            </div>
+            <div class="library-body" id="library-body">
+              <div class="empty-state" id="empty-state">
+                <div class="empty-art">
+                  <div class="empty-album">
+                    <span class="album-orbit"></span
+                    ><span data-icon="music"></span
+                    ><span class="album-caption">YOUR NEXT FAVORITE</span>
+                  </div>
+                  <div class="empty-floating">
+                    <span data-icon="sparkle"></span>完整，才好听。
+                  </div>
+                </div>
+                <h2>从一首歌，开始整理</h2>
+                <p>
+                  拖入音频或文件夹，即可预览封面与详细信息<br />支持
+                  MP3、FLAC、M4A、WAV、OGG 等常用格式
+                </p>
+                <button class="button primary" data-action="import">
+                  <span data-icon="plus"></span>选择本地音频</button
+                ><button class="text-button demo-button" data-action="demo">
+                  先试试演示音频 <span data-icon="arrow-right"></span></button
+                ><span class="empty-footnote"
+                  >文件留在本地 · 联网仅发送搜索关键词</span
+                >
+              </div>
+              <div
+                class="album-grid"
+                id="album-grid"
+                role="list"
+                aria-label="音频封面网格"
+              ></div>
+              <div id="no-results" class="no-results" hidden>
+                没有符合条件的音频。试试其他筛选或关键词。
+              </div>
+              <button id="load-more" class="button secondary load-more" hidden>
+                显示更多音频
+              </button>
+            </div>
+            <div class="library-footer">
+              <span id="library-status"
+                ><span class="status-dot"></span>准备就绪</span
+              ><span>单击预览 · Ctrl 多选 · Shift 连选</span
+              ><label class="size-control" title="调整封面大小"
+                ><span data-icon="grid"></span
+                ><input
+                  id="grid-size"
+                  type="range"
+                  min="136"
+                  max="230"
+                  value="172"
+                  aria-label="封面图标大小"
+              /></label>
+            </div>
+          </section>
+          <div class="bottom-bar">
+            <div id="operation-status">
+              <span data-icon="shield"></span
+              ><span>写入前自动备份原文件，放心整理。</span>
+            </div>
+            <button
+              class="button primary save-all"
+              data-action="save-all"
+              disabled
+            >
+              <span data-icon="save"></span
+              ><span id="save-count">写入全部草稿</span>
+            </button>
+          </div>
+        </main>
+        <aside
+          class="preview-card"
+          id="preview-card"
+          aria-label="音频详细预览"
+          hidden
+        ></aside>
+      </div>
+    </div>
+    <div id="drop-overlay" class="drop-overlay" hidden>
+      <span data-icon="folder-plus"></span>
+      <h2>把音乐放在这里</h2>
+      <p>松开以导入音频与文件夹</p>
+    </div>
+    <div
+      class="toast-region"
+      id="toasts"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
+    <dialog id="modal">
+      <div class="modal-heading">
+        <div>
+          <span class="eyebrow" id="modal-eyebrow">MUSIC TOOLS</span>
+          <h2 id="modal-title"></h2>
+        </div>
+        <button
+          class="icon-button"
+          id="modal-close"
+          aria-label="关闭对话框"
+          data-icon="close"
+        ></button>
+      </div>
+      <div id="modal-body"></div>
+      <div id="modal-footer"></div>
+    </dialog>
+    <audio id="player" preload="none"></audio>
+    <script src="app.js"></script>
+  </body>
+</html>
