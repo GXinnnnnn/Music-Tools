@@ -6,5 +6,5 @@
   </defs>
   <circle cx="200" cy="324" r="164" fill="#ffdf58"/>
   <use href="#note" transform="translate(23 16)" fill="#80cbed"/>
-  <use href="#note" fill="#dd7297"/>
+  <use href="#note" fill="#ff5da8"/>
 </svg>

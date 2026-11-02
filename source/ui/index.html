@@ -9,6 +9,7 @@
     />
     <title>Music Tools · 音乐整理工作台</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="lyric-ui.css" />
   </head>
   <body>
     <div class="app-shell">
@@ -65,6 +66,11 @@
             <b id="count-done">0</b>
           </button>
           <div class="side-separator"></div>
+          <div class="workspace-label">歌词工作台</div>
+          <button class="nav-item" data-action="extract-lyrics">
+            <span data-icon="lyrics"></span>歌词提取 <span class="count-pill">SRT</span>
+          </button>
+          <div class="side-separator"></div>
           <div class="workspace-label">工具与记录</div>
           <button class="nav-item" data-action="tools">
             <span data-icon="sliders"></span>批量工具
@@ -86,7 +92,7 @@
             <button class="text-button muted" data-action="help">
               <span data-icon="help"></span>使用说明与快捷键
             </button>
-            <div class="version">PORTABLE EDITION <span>v0.1</span></div>
+            <div class="version">LOCAL EDITION <span>—</span></div>
           </div>
         </aside>
         <main class="main-area" id="main">
@@ -169,6 +175,8 @@
               ><span class="queue-actions-divider"></span
               ><button class="text-button" data-action="batch-match">
                 <span data-icon="sparkle"></span>补全所选</button
+              ><button class="text-button" data-action="extract-lyrics">
+                <span data-icon="lyrics"></span>提取歌词</button
               ><button class="text-button" data-action="tools">
                 <span data-icon="sliders"></span>批量编辑
               </button>
@@ -233,6 +241,11 @@
               /></label>
             </div>
           </section>
+          <div class="background-task" id="background-task" role="status" aria-live="polite" hidden>
+            <div class="background-task-copy"><strong id="background-task-label"></strong><span id="background-task-count"></span></div>
+            <progress id="background-task-progress" max="1" value="0" aria-label="后台任务进度"></progress>
+            <div class="task-actions"><button class="text-button" data-action="task-view" id="background-task-view">查看详情</button><button class="text-button" data-action="task-stop" id="background-task-stop">停止任务</button></div>
+          </div>
           <div class="bottom-bar">
             <div id="operation-status">
               <span data-icon="shield"></span
@@ -252,7 +265,6 @@
           class="preview-card"
           id="preview-card"
           aria-label="音频详细预览"
-          hidden
         ></aside>
       </div>
     </div>
@@ -284,6 +296,8 @@
       <div id="modal-footer"></div>
     </dialog>
     <audio id="player" preload="none"></audio>
+    <script src="theme-transition.js"></script>
+    <script src="lyric-ui.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

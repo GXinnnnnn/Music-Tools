@@ -1,7 +1,7 @@
 {
   "name": "music-tools",
   "productName": "Music Tools",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "license": "GPL-3.0-or-later",
   "repository": {"type":"git","url":"https://github.com/GXinnnnnn/Music-Tools.git"},
   "homepage": "https://github.com/GXinnnnnn/Music-Tools",
@@ -21,6 +21,9 @@
     "test:ui:tools": "node scripts/ui-tools-check.cjs",
     "test:release": "node scripts/release-check.cjs",
     "test:ui:policy": "node scripts/ui-policy-check.cjs",
+    "test:ui:lyrics": "node scripts/ui-lyrics-check.cjs",
+    "test:ui:workspace": "node scripts/workspace-check.cjs",
+    "test:ui:lyric-results": "node scripts/ui-lyric-result-check.cjs",
     "test:providers:live": "node scripts/providers-live-check.cjs",
     "test:installer": "node scripts/installer-check.cjs"
   },

@@ -18,11 +18,11 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'vendor' / 'python-libs'))
 import mutagen
-from mutagen.id3 import ID3, APIC, COMM, USLT, TXXX, Frames
+from mutagen.id3 import ID3, ID3NoHeaderError, APIC, COMM, USLT, TXXX, Frames
 from mutagen.flac import FLAC, Picture
 from mutagen.mp4 import MP4, MP4Cover, MP4FreeForm
 from mutagen.asf import ASF, ASFByteArrayAttribute
-from mutagen.apev2 import APEv2, APEBinaryValue
+from mutagen.apev2 import APEv2, APENoHeaderError, APEBinaryValue
 
 FIELDS = ('title', 'artist', 'album', 'albumArtist', 'year', 'track', 'disc', 'genre', 'composer', 'lyricist', 'comment', 'lyrics')
 EXTENSIONS = {'.mp3', '.flac', '.m4a', '.m4b', '.mp4', '.ogg', '.oga', '.opus', '.wav', '.wave', '.aif', '.aiff', '.aifc', '.ape', '.wma', '.asf', '.wv', '.dsf', '.dff', '.dsdiff', '.tta', '.mpc', '.ofr', '.ofs', '.spx'}
@@ -145,6 +145,9 @@ def read_tags(audio):
     tags = audio.tags
     cover = ''
     if tags is None:
+        if isinstance(audio, FLAC) and audio.pictures:
+            picture = sorted(audio.pictures, key=lambda item: item.type != 3)[0]
+            cover = data_uri(picture.data, picture.mime)
         return result, cover
     if isinstance(tags, ID3):
         for field, key in ID3_MAP.items():
@@ -215,11 +218,274 @@ def read_tags(audio):
     return result, cover
 
 
+def container_metadata(path, audio, delete=False):
+    """Inspect/remove non-audio IFF chunks with Mutagen's size-aware APIs."""
+    kind = type(audio).__name__
+    if kind == 'WAVE':
+        from mutagen._riff import RiffFile
+        container_type = RiffFile
+        technical = {'fmt', 'data', 'fact', 'ds64', 'junk', 'pad'}
+    elif kind == 'AIFF':
+        from mutagen.aiff import AIFFFile
+        container_type = AIFFFile
+        technical = {'comm', 'ssnd', 'fver', 'junk', 'pad'}
+    elif kind == 'DSDIFF':
+        from mutagen.dsdiff import DSDIFFFile
+        container_type = DSDIFFFile
+        technical = {'fver', 'prop', 'dsd', 'dst', 'dsti', 'frte', 'junk', 'pad'}
+    else:
+        return False
+    found = False
+    with path.open('r+b' if delete else 'rb') as handle:
+        container = container_type(handle)
+        for chunk in list(container.root.subchunks()):
+            key = chunk.id.strip().lower()
+            # Empty ID3 containers alone are not actual embedded metadata.
+            if key in technical or (key == 'id3' and not delete):
+                continue
+            if key == 'list' and getattr(chunk, 'name', '').lower() == 'wavl':
+                continue  # This LIST contains audio, not INFO/annotations.
+            found = True
+            if delete:
+                chunk.delete()
+    return found
+
+
+def auxiliary_metadata(path, audio, delete=False):
+    """Standalone streams can carry both ID3 and APEv2 at once."""
+    if type(audio).__name__ not in {'MP3', 'FLAC', 'WavPack', 'MonkeysAudio', 'Musepack', 'TrueAudio', 'OptimFROG', 'TAK'}:
+        return False
+    found = False
+    try:
+        tags = APEv2(str(path))
+    except APENoHeaderError:
+        pass
+    else:
+        found = bool(len(tags))
+        if delete:
+            tags.delete(str(path))
+    # On FLAC, native save(deleteid3=True) also handles prefixed/trailing ID3.
+    # On other standalone streams use ID3's native deletion, never byte slicing.
+    try:
+        tags = ID3(str(path))
+    except ID3NoHeaderError:
+        pass
+    else:
+        found = found or bool(len(tags) or tags.unknown_frames)
+        if delete:
+            tags.delete(str(path))
+    return found
+
+
+def mp4_chapter_metadata(path, audio, delete=False):
+    """Remove Nero/QuickTime chapters without moving any media offsets."""
+    if not isinstance(audio, MP4):
+        return False
+    from mutagen.mp4._atom import Atom, Atoms
+
+    def invalid():
+        raise EngineError('MP4 章节结构无法安全清空，已取消修改', 'MP4_CHAPTER_ERROR')
+
+    def payload(atom):
+        complete, data = atom.read(handle)
+        if not complete:
+            invalid()
+        return data
+
+    def chunk_ranges(track):
+        # Chapter text uses the same native sample tables as audio. Resolve
+        # whole chunks, retaining gaps and every other track's encoded bytes.
+        try:
+            table = track[b'mdia', b'minf', b'stbl']
+            sizes = payload(table[b'stsz', ])
+            fixed, count = struct.unpack('>II', sizes[4:12])
+            if count > path.stat().st_size:
+                invalid()
+            if not fixed and len(sizes) != 12 + count * 4:
+                invalid()
+            sample_sizes = [fixed] * count if fixed else list(struct.unpack('>%dI' % count, sizes[12:]))
+            mapping = payload(table[b'stsc', ])
+            entries, = struct.unpack('>I', mapping[4:8])
+            if len(mapping) != 8 + entries * 12:
+                invalid()
+            runs = list(struct.iter_unpack('>III', mapping[8:]))
+            if (count and (not runs or runs[0][0] != 1)) or any(not per for _, per, _ in runs):
+                invalid()
+            if any(a[0] >= b[0] for a, b in zip(runs, runs[1:])):
+                invalid()
+            try:
+                offsets, width, code = payload(table[b'stco', ]), 4, 'I'
+            except KeyError:
+                offsets, width, code = payload(table[b'co64', ]), 8, 'Q'
+            chunks, = struct.unpack('>I', offsets[4:8])
+            if len(offsets) != 8 + chunks * width:
+                invalid()
+            starts = struct.unpack('>%d%s' % (chunks, code), offsets[8:])
+            ranges, sample, run = [], 0, 0
+            for index, start in enumerate(starts, 1):
+                while run + 1 < len(runs) and runs[run + 1][0] <= index:
+                    run += 1
+                if not runs or sample + runs[run][1] > count:
+                    invalid()
+                end = sample + runs[run][1]
+                length = sum(sample_sizes[sample:end])
+                ranges.append((start, start + length))
+                sample = end
+            if sample != count:
+                invalid()
+            return ranges
+        except (KeyError, struct.error):
+            invalid()
+
+    def zero(start, length):
+        handle.seek(start)
+        block = bytes(min(length, 65536))
+        while length:
+            amount = min(length, len(block))
+            handle.write(block[:amount])
+            length -= amount
+
+    with path.open('r+b' if delete else 'rb') as handle:
+        atoms = Atoms(handle)
+        moov = atoms[b'moov']
+        retired = list(moov.findall(b'chpl', True))
+        tracks, chapter_ids = {}, set()
+        for track in moov.findall(b'trak'):
+            data = payload(track[b'tkhd', ])
+            position = 20 if data[0] == 1 else 12
+            track_id, = struct.unpack('>I', data[position:position + 4])
+            if track_id in tracks:
+                invalid()
+            tracks[track_id] = track
+            try:
+                reference = track[b'tref', ]
+            except KeyError:
+                continue
+            handle.seek(reference.offset + reference.length - reference.datalength)
+            while handle.tell() < reference.offset + reference.length:
+                child = Atom(handle, level=1)
+                if child.offset + child.length > reference.offset + reference.length:
+                    invalid()
+                if child.name == b'chap':
+                    data = payload(child)
+                    if len(data) % 4:
+                        invalid()
+                    chapter_ids.update(struct.unpack('>%dI' % (len(data) // 4), data))
+                    retired.append(child)
+                handle.seek(child.offset + child.length)
+        if not retired:
+            return False
+        if not delete:
+            return True
+        media = [(atom.offset + atom.length - atom.datalength, atom.offset + atom.length)
+                 for atom in atoms.atoms if atom.name == b'mdat']
+        chapter_ranges, retained_ranges = [], []
+        for track_id, track in tracks.items():
+            if track_id in chapter_ids:
+                handler = payload(track[b'mdia', b'hdlr'])[8:12]
+                if handler not in (b'text', b'subt', b'sbtl'):
+                    invalid()
+                chapter_ranges.extend(chunk_ranges(track))
+                retired.append(track)
+            elif chapter_ids:
+                retained_ranges.extend(chunk_ranges(track))
+        for start, end in chapter_ranges:
+            if not any(left <= start <= end <= right for left, right in media):
+                invalid()
+            if any(start < right and end > left for left, right in retained_ranges):
+                invalid()
+        # Equal-size free atoms need no parent-size, stco/co64 or fragment
+        # offset changes. Zero payloads as well, so private titles are gone.
+        for start, end in chapter_ranges:
+            zero(start, end - start)
+        for atom in retired:
+            handle.seek(atom.offset + 4)
+            handle.write(b'free')
+            zero(atom.offset + atom.length - atom.datalength, atom.datalength)
+    return True
+
+
+def has_metadata(path, audio=None):
+    """Use native raw metadata, including fields absent from the editor."""
+    audio = audio if audio is not None else load_audio(path)
+    tags = audio.tags
+    if tags is not None and (len(tags) or getattr(tags, 'unknown_frames', None) or getattr(tags, '_failed_atoms', None)):
+        return True
+    if isinstance(audio, FLAC):
+        if audio.pictures or any(block.code not in (0, 1, 3, 4, 6) for block in audio.metadata_blocks):
+            return True
+        # FLAC can also carry legacy ID3 tags outside native blocks.
+        with path.open('rb') as handle:
+            if handle.read(3) == b'ID3':
+                return True
+            if path.stat().st_size >= 128:
+                handle.seek(-128, 2)
+                if handle.read(3) == b'TAG':
+                    return True
+    return mp4_chapter_metadata(path, audio) or container_metadata(path, audio) or auxiliary_metadata(path, audio)
+
+
+def clear_tags(path):
+    audio = load_audio(path)
+    audio.delete()
+    if isinstance(audio, FLAC):
+        # FLAC.delete() removes Vorbis comments only. Keep stream info,
+        # seek tables and padding; remove pictures, cuesheets and custom blocks.
+        audio.clear_pictures()
+        audio.metadata_blocks = [block for block in audio.metadata_blocks if block.code in (0, 1, 3)]
+        audio.tags = None
+        audio.cuesheet = None
+        audio.save(deleteid3=True, padding=lambda _: 0)
+    mp4_chapter_metadata(path, audio, delete=True)
+    container_metadata(path, audio, delete=True)
+    auxiliary_metadata(path, audio, delete=True)
+    if has_metadata(path):
+        raise EngineError('此格式仍有未能移除的嵌入元数据，已取消清空', 'METADATA_REMAINS')
+
+
+def preserve_file_times(path, original_stat):
+    """Set times on the staged inode, so replacement exposes the original dates."""
+    os.utime(path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    if os.name != 'nt':
+        return
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                  wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.SetFileTime.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME),
+                                  ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME)]
+    kernel.SetFileTime.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW(str(path), 0x100, 7, None, 3, 0, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        birth_ns = getattr(original_stat, 'st_birthtime_ns', original_stat.st_ctime_ns)
+        ticks = birth_ns // 100 + 116444736000000000
+        creation = wintypes.FILETIME(ticks & 0xffffffff, ticks >> 32)
+        if not kernel.SetFileTime(handle, ctypes.byref(creation), None, None):
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def backup_skip_reason(path, backup_enabled=True, force=False):
+    if force:
+        return None
+    if backup_enabled is False:
+        return 'disabled'
+    return None if has_metadata(path) else 'empty'
+
+
 def read_record(path):
     path = canonical(path)
     before = stamp(path)
     audio = load_audio(path)
     tags, cover = read_tags(audio)
+    metadata_present = has_metadata(path, audio)
     after = path.stat()
     if after.st_size != before['size'] or str(after.st_mtime_ns) != before['mtimeNs']:
         raise EngineError('读取期间文件已被外部修改，请重新扫描', 'EXTERNAL_MODIFICATION')
@@ -228,7 +494,7 @@ def read_record(path):
             'path': str(path), 'filename': path.name, 'format': type(audio).__name__.upper(),
             'size': before['size'], 'duration': round(getattr(info, 'length', 0) or 0, 3),
             'bitrate': int(getattr(info, 'bitrate', 0) or 0), 'sampleRate': int(getattr(info, 'sample_rate', 48000 if type(audio).__name__ == 'OggOpus' else 0) or 0),
-            'channels': int(getattr(info, 'channels', 0) or 0), 'bitsPerSample': int(getattr(info, 'bits_per_sample', 0) or 0), 'modifiedAt': path.stat().st_mtime * 1000, 'tags': tags, 'cover': cover, 'stamp': before}
+            'channels': int(getattr(info, 'channels', 0) or 0), 'bitsPerSample': int(getattr(info, 'bits_per_sample', 0) or 0), 'modifiedAt': after.st_mtime * 1000, 'tags': tags, 'cover': cover, 'hasMetadata': metadata_present, 'stamp': before}
 
 
 def number_pair(value):
@@ -490,8 +756,11 @@ def update_entry(identity, **values):
     return entry
 
 
-def replace_transaction(path, expected, modifier=None, restore_source=None, action='write', extra=None):
+def replace_transaction(path, expected, modifier=None, restore_source=None, action='write', extra=None,
+                        backup_enabled=True, preserve_times=False):
+    original_stat = path.stat()
     before = check_stamp(path, expected)
+    skipped = backup_skip_reason(path, backup_enabled, force=action == 'restore')
     fd, temporary = tempfile.mkstemp(prefix='.music-tools-', suffix=path.suffix, dir=str(path.parent))
     os.close(fd)
     temporary = Path(temporary)
@@ -505,17 +774,28 @@ def replace_transaction(path, expected, modifier=None, restore_source=None, acti
         staged = read_record(temporary)
         with temporary.open('r+b') as handle:
             os.fsync(handle.fileno())
+        if preserve_times:
+            preserve_file_times(temporary, original_stat)
+            staged['stamp'] = stamp(temporary)
+            staged['modifiedAt'] = original_stat.st_mtime * 1000
         check_stamp(path, before)
-        entry = create_backup(path, before, action, extra={**(extra or {}), 'afterStamp': staged['stamp']})
+        if skipped is None:
+            entry = create_backup(path, before, action, extra={**(extra or {}), 'afterStamp': staged['stamp']})
         check_stamp(path, before)
         os.replace(temporary, path)
         committed = True
         after = stamp(path)
-        update_entry(entry['id'], status='complete', afterStamp=after)
+        if entry:
+            update_entry(entry['id'], status='complete', afterStamp=after)
         # Reuse staged tags/info while exposing the actual final path/id.
         record = {**staged, 'path': str(path), 'filename': path.name, 'stamp': after,
                   'id': hashlib.sha256(os.path.normcase(str(path)).encode('utf-8')).hexdigest()[:20]}
-        return {'path': str(path), 'backupId': entry['id'], 'record': record}
+        result = {'path': str(path), 'record': record}
+        if entry:
+            result['backupId'] = entry['id']
+        else:
+            result['backupSkipped'] = skipped
+        return result
     except Exception as exc:
         if entry:
             with contextlib.suppress(Exception):
@@ -562,8 +842,31 @@ def write_batch(jobs, options):
             changes = job.get('tags', job.get('changes', {}))
             if not changes and 'cover' not in job:
                 raise EngineError('没有需要写入的字段', 'EMPTY_CHANGES')
-            result = replace_transaction(path, job.get('stamp'), lambda temporary: write_tags(temporary, changes, 'cover' in job, job.get('cover')))
+            result = replace_transaction(path, job.get('stamp'), lambda temporary: write_tags(temporary, changes, 'cover' in job, job.get('cover')),
+                                         backup_enabled=options.get('backupEnabled', True))
             results.append(result)
+        except Exception as exc:
+            errors.append(error_item(job.get('path'), exc))
+            if options.get('stopOnError'):
+                break
+    return {'results': results, 'errors': errors}
+
+
+def clear_batch(jobs, options):
+    results, errors = [], []
+    for job in jobs:
+        try:
+            path = canonical(job.get('path'))
+            before = read_record(path)
+            if job.get('stamp') is not None and not same_stamp(before['stamp'], job['stamp']):
+                raise EngineError('文件已被外部修改，请重新扫描后再操作', 'EXTERNAL_MODIFICATION')
+            if not before['hasMetadata']:
+                check_stamp(path, before['stamp'])
+                results.append({'path': str(path), 'record': before, 'unchanged': True,
+                                'backupSkipped': 'disabled' if options.get('backupEnabled', True) is False else 'empty'})
+                continue
+            results.append(replace_transaction(path, before['stamp'], clear_tags, action='clear',
+                                               backup_enabled=options.get('backupEnabled', True), preserve_times=True))
         except Exception as exc:
             errors.append(error_item(job.get('path'), exc))
             if options.get('stopOnError'):
@@ -627,7 +930,8 @@ def rename_preview(jobs, pattern):
     return {'results': results, 'errors': errors}
 
 
-def rename_batch(jobs, pattern):
+def rename_batch(jobs, pattern, options=None):
+    options = options or {}
     preview = rename_preview(jobs, pattern)
     results, errors = [], list(preview['errors'])
     for item in preview['results']:
@@ -639,7 +943,9 @@ def rename_batch(jobs, pattern):
                 results.append({'path': str(path), 'newPath': str(target), 'unchanged': True, 'record': read_record(path)})
                 continue
             before = check_stamp(path, item['stamp'])
-            entry = create_backup(path, before, 'rename', target=target, extra={'afterStamp': before})
+            skipped = backup_skip_reason(path, options.get('backupEnabled', True))
+            if skipped is None:
+                entry = create_backup(path, before, 'rename', target=target, extra={'afterStamp': before})
             check_stamp(path, before)
             # Windows rename refuses to overwrite an existing destination.
             # On POSIX use a hard link first to preserve that same guarantee.
@@ -650,8 +956,13 @@ def rename_batch(jobs, pattern):
                 path.unlink()
             committed = True
             record = read_record(target)
-            update_entry(entry['id'], status='complete', afterStamp=record['stamp'])
-            results.append({'path': str(path), 'newPath': str(target), 'backupId': entry['id'], 'record': record})
+            result = {'path': str(path), 'newPath': str(target), 'record': record}
+            if entry:
+                update_entry(entry['id'], status='complete', afterStamp=record['stamp'])
+                result['backupId'] = entry['id']
+            else:
+                result['backupSkipped'] = skipped
+            results.append(result)
         except Exception as exc:
             if entry:
                 with contextlib.suppress(Exception):
@@ -749,7 +1060,9 @@ def main(request):
         if command == 'writeBatch':
             return write_batch(request.get('jobs', []), request.get('options') or {})
         if command == 'renameBatch':
-            return rename_batch(request.get('jobs', []), request.get('pattern'))
+            return rename_batch(request.get('jobs', []), request.get('pattern'), request.get('options') or {})
+        if command == 'clearBatch':
+            return clear_batch(request.get('jobs', []), request.get('options') or {})
         if command == 'restore':
             return restore(request['id'])
         if command == 'exportSidecars':

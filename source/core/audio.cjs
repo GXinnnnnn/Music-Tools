@@ -101,12 +101,16 @@ function restore(id) {
   });
 }
 async function renamePreview(jobs, pattern) { return bridge('renamePreview', { jobs: prepare(jobs), pattern }); }
-function renameBatch(jobs, pattern) {
+function renameBatch(jobs, pattern, options = {}) {
   const prepared = prepare(jobs);
-  return serial(async () => rememberResults(await bridge('renameBatch', { jobs: prepared, pattern })));
+  return serial(async () => rememberResults(await bridge('renameBatch', { jobs: prepared, pattern, options })));
+}
+function clearBatch(jobs, options = {}) {
+  const prepared = prepare(jobs);
+  return serial(async () => rememberResults(await bridge('clearBatch', { jobs: prepared, options })));
 }
 function exportSidecars(jobs, options = {}) {
   return serial(() => bridge('exportSidecars', { jobs: prepare(jobs), options }));
 }
 
-module.exports = { setDataDir, setPythonPath, scan, read, writeBatch, history, restore, renamePreview, renameBatch, exportSidecars };
+module.exports = { setDataDir, setPythonPath, scan, read, writeBatch, clearBatch, history, restore, renamePreview, renameBatch, exportSidecars };

@@ -1,0 +1,190 @@
+/* Scoped to the shared dialog while MusicLyrics owns its content. */
+dialog.lyric-dialog {
+  width: min(1240px, calc(100vw - 72px));
+  max-width: calc(100vw - 40px);
+  max-height: min(91dvh, 1000px);
+  padding: 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+dialog.lyric-dialog:not([open]) { display: none; }
+dialog.lyric-dialog.lyric-dialog-batch { width: min(1040px, calc(100vw - 72px)); }
+.lyric-dialog .modal-heading { flex: 0 0 auto; margin-bottom: 16px; }
+.lyric-dialog #modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  padding: 2px 5px 4px 2px;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  scroll-padding: 12px;
+}
+.lyric-dialog #modal-footer { flex: 0 0 auto; align-items: center; flex-wrap: wrap; padding-top: 16px; margin-top: 10px; border-top: 1px solid var(--line); }
+.lyric-ui { min-width: 0; font-size: 12px; line-height: 1.6; }
+.lyric-ui button, .lyric-dialog #modal-footer button { min-height: 36px; }
+.lyric-ui input:not([type="checkbox"]), .lyric-ui select { width: 100%; min-height: 38px; }
+.lyric-ui textarea { width: 100%; }
+.lyric-ui .form-input { border: 1px solid var(--line); background: var(--input); color: var(--text); border-radius: 10px; padding: 9px 11px; }
+.lyric-ui .button { white-space: nowrap; }
+.lyric-ui .text-button { padding: 7px 9px; border-radius: 8px; }
+.lyric-ui .text-button:hover { background: var(--accent-soft); color: var(--accent-text); }
+.lyric-ui .lyric-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; color: var(--soft); font-size: 12px; }
+.lyric-ui .lyric-field input, .lyric-ui .lyric-field select { color: var(--text); }
+.lyric-ui p { overflow-wrap: anywhere; }
+.lyric-song, .lyric-batch-intro { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 0 16px; }
+.lyric-song > div, .lyric-batch-intro > div { flex: 1; min-width: 0; }
+.lyric-song strong { font-size: 15px; overflow-wrap: anywhere; }
+.lyric-song p, .lyric-batch-intro p { margin: 3px 0 0; color: var(--soft); font-size: 12px; }
+.lyric-batch-intro h3 { font-size: 16px; margin: 0; }
+.lyric-song-icon { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 14px; background: var(--accent-soft); color: var(--accent-text); flex-shrink: 0; }
+.lyric-song-icon svg { width: 23px; height: 23px; }
+.lyric-search { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; margin: 0; }
+.lyric-search > button { min-height: 38px; }
+.lyric-alert, .lyric-notice { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 12px; padding: 10px 12px; overflow-wrap: anywhere; font-size: 12px; }
+.lyric-alert { color: var(--accent-text); background: var(--accent-soft); border-left: 3px solid var(--accent-text); }
+.lyric-notice { color: var(--soft); background: var(--surface); }
+.lyric-settings { margin: 16px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 10px 14px; }
+.lyric-settings > summary { cursor: pointer; min-height: 28px; color: var(--text); font-weight: 600; list-style-position: inside; padding: 3px 0; }
+.lyric-settings > summary svg { width: 16px; height: 16px; margin: 0 5px 2px 0; }
+.lyric-settings summary [data-lyric-setting-summary] { color: var(--soft); font-weight: 400; font-size: 12px; margin-left: 12px; }
+.lyric-settings summary:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; border-radius: 4px; }
+.lyric-option-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.lyric-output-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lyric-name-custom { grid-column: 1 / -1; }
+.lyric-name-custom small { color: var(--soft); font-size: 11px; overflow-wrap: anywhere; }
+.lyric-filename-example { margin: 12px 0 0; padding: 9px 11px; background: var(--solid); border: 1px solid var(--line); border-radius: 8px; color: var(--soft); font-size: 12px; overflow-wrap: anywhere; }
+.lyric-filename-example strong { color: var(--text); font-weight: 500; }
+.lyric-ui .form-input[aria-invalid="true"] { border-color: var(--accent-text); }
+.lyric-hint { font-size: 12px; color: var(--soft); line-height: 1.7; margin: 9px 0 0; }
+.lyric-sources { padding: 0; margin: 14px 0 0; border: 0; min-width: 0; }
+.lyric-sources legend { font-weight: 600; color: var(--text); padding: 0; }
+.lyric-sources legend span { color: var(--soft); font-weight: 400; margin-left: 10px; }
+.lyric-sources > div { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 22px; margin: 5px 0 0; }
+.lyric-sources label { min-height: 32px; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; color: var(--soft); }
+.lyric-sources input[type="checkbox"] { margin: 0; accent-color: var(--accent-text); }
+.lyric-workspace { display: grid; grid-template-columns: minmax(220px, .9fr) minmax(260px, 1.1fr) minmax(260px, 1fr); gap: 16px; align-items: stretch; min-width: 0; }
+.lyric-workspace > section { min-width: 0; border: 1px solid var(--line); border-radius: 13px; padding: 13px; background: var(--surface); }
+.lyric-section-heading { min-height: 29px; display: flex; justify-content: space-between; align-items: start; gap: 8px; margin-bottom: 10px; }
+.lyric-section-heading h3 { font-size: 12px; margin: 0; font-weight: 600; color: var(--accent-text); white-space: nowrap; }
+.lyric-section-heading h3 > span { color: var(--text); margin-left: 6px; }
+.lyric-section-heading > span { font-size: 11px; color: var(--soft); text-align: right; overflow-wrap: anywhere; }
+.lyric-candidates { max-height: 336px; min-height: 220px; overflow: auto; padding: 2px 4px 3px 2px; scroll-padding: 6px; scrollbar-gutter: stable; }
+.lyric-candidate { display: flex; flex-direction: column; gap: 3px; text-align: left; width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 0 0 8px; background: var(--input); color: var(--soft); }
+.lyric-candidate:hover:not(:disabled) { background: var(--accent-soft); }
+.lyric-candidate.is-selected { border-color: var(--accent-text); box-shadow: inset 3px 0 0 var(--accent-text); background: var(--accent-soft); }
+.lyric-candidate > strong { color: var(--text); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.lyric-candidate > span { width: 100%; overflow-wrap: anywhere; }
+.lyric-candidate-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; justify-content: space-between; margin-bottom: 3px; font-size: 11px; }
+.lyric-source { color: var(--accent-text); font-weight: 600; }
+.lyric-candidate-album { font-size: 12px; }
+.lyric-candidate-duration { color: var(--soft); font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 3px; }
+.lyric-candidates .lyric-empty[role="status"] { min-height: 120px; padding: 16px; }
+.lyric-empty { min-height: 210px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 20px 14px; text-align: center; color: var(--soft); line-height: 1.9; }
+.lyric-tabs { display: flex; gap: 6px; margin: 0 0 10px; border-bottom: 1px solid var(--line); }
+.lyric-tabs button { background: transparent; color: var(--soft); padding: 7px 14px; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; min-width: 68px; }
+.lyric-tabs button[aria-selected="true"] { color: var(--accent-text); border-bottom-color: var(--accent-text); background: var(--accent-soft); font-weight: 600; }
+.lyric-ui .lyric-editor { display: block; height: 244px; min-height: 160px; resize: vertical; font-family: Consolas, "Microsoft YaHei UI", monospace; font-size: 12px; line-height: 1.8; border: 1px solid var(--line); tab-size: 2; }
+.lyric-ui .lyric-editor:disabled { opacity: .65; }
+.lyric-preview { white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; margin: 0; padding: 12px; height: 298px; min-height: 180px; background: var(--solid); border: 1px solid var(--line); border-radius: 10px; color: var(--text); font-family: Consolas, "Microsoft YaHei UI", monospace; font-size: 12px; line-height: 1.8; tab-size: 2; scroll-padding: 8px; }
+.lyric-preview:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
+.lyric-preview-meta { margin: 9px 0 0; color: var(--soft); font-size: 12px; }
+.lyric-format-badge { padding: 1px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-text) !important; font-size: 10px !important; font-weight: 600; letter-spacing: .4px; }
+.lyric-warnings { margin: 8px 0 0; padding-left: 17px; color: var(--soft); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.lyric-warnings li + li { margin-top: 4px; }
+.lyric-directory { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 13px 14px; margin-top: 16px; }
+.lyric-directory-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lyric-directory-copy > span { color: var(--soft); font-size: 11px; }
+.lyric-directory-copy > strong { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.lyric-directory-copy > small { color: var(--soft); font-size: 11px; }
+.lyric-directory-actions { display: flex; flex-wrap: wrap; justify-content: end; align-items: center; gap: 6px; flex-shrink: 0; }
+.lyric-directory-actions .text-button { font-size: 11px; }
+.lyric-privacy { display: flex; align-items: center; gap: 7px; margin: 12px 1px 0; font-size: 11px; color: var(--soft); }
+.lyric-privacy svg { width: 14px; height: 14px; flex-shrink: 0; }
+.lyric-footer-status { color: var(--soft); margin-right: auto; font-size: 12px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.lyric-default-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--accent-soft); color: var(--accent-text); }
+.lyric-default-summary > span { display: inline-flex; align-items: center; gap: 6px; padding-right: 10px; font-size: 12px; }
+.lyric-default-summary > span + span { border-left: 1px solid var(--line); padding-left: 10px; }
+.lyric-default-summary svg { width: 17px; height: 17px; }
+.lyric-batch-progress { width: min(100%, 560px); margin: 18px auto 0; padding: 14px 16px; background: var(--surface); border-radius: 12px; border: 1px solid var(--line); }
+.lyric-batch-progress > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text); }
+.lyric-batch-progress > div span { color: var(--soft); font-variant-numeric: tabular-nums; }
+.lyric-batch-progress progress { display: block; width: 100%; height: 8px; border: 0; border-radius: 8px; overflow: hidden; accent-color: var(--accent-text); margin-top: 12px; background: var(--bg); }
+.lyric-batch-progress progress::-webkit-progress-bar { background: var(--bg); border-radius: 8px; }
+.lyric-batch-progress progress::-webkit-progress-value { background: var(--accent); border-radius: 8px; }
+.lyric-batch-progress p { margin: 8px 0 0; color: var(--soft); font-size: 12px; min-height: 19px; }
+.lyric-results-heading { margin: 20px 0 8px; align-items: center; }
+.lyric-results-heading h3 { color: var(--text); font-size: 13px; }
+.lyric-results { max-height: 350px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; scrollbar-gutter: stable; background: var(--surface); padding: 0 12px; scroll-padding: 8px; }
+.lyric-result { display: flex; align-items: center; gap: 12px; padding: 13px 0; min-width: 0; }
+.lyric-result + .lyric-result { border-top: 1px solid var(--line); }
+.lyric-result-number { width: 24px; flex-shrink: 0; color: var(--soft); font-size: 11px; font-variant-numeric: tabular-nums; align-self: start; padding-top: 2px; }
+.lyric-result-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.lyric-result-copy > strong { color: var(--text); font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.lyric-result-copy > span, .lyric-result-copy > p { color: var(--soft); font-size: 12px; margin: 0; overflow-wrap: anywhere; }
+.lyric-result-copy > small { color: var(--soft); font-size: 11px; overflow-wrap: anywhere; }
+.lyric-result-actions { display: flex; align-items: end; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.lyric-result-state { color: var(--soft); font-size: 11px; }
+.lyric-result.is-success .lyric-result-state { color: var(--success); }
+.lyric-result.needs-review .lyric-result-state { color: var(--accent-text); }
+.lyric-result-actions .text-button { font-size: 12px; }
+.lyric-result-actions .text-button svg { width: 15px; height: 15px; }
+.lyric-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+dialog.lyric-result-dialog { width: min(440px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 40px); margin: auto; padding: 28px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); overflow: auto; text-align: center; }
+dialog.lyric-result-dialog::backdrop { background: rgb(28 20 36 / 30%); }
+.lyric-result-emblem { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; margin: 0 auto 16px; border-radius: 18px; background: var(--accent-soft); color: var(--accent-text); }
+.lyric-result-emblem svg { width: 32px; height: 32px; }
+.lyric-result-dialog h2 { margin: 0; color: var(--text); font-size: 19px; font-weight: 650; line-height: 1.5; }
+.lyric-result-dialog-summary { margin: 12px 0 0; font-size: 13px; line-height: 1.8; color: var(--text); overflow-wrap: anywhere; }
+.lyric-result-dialog-detail { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--solid); color: var(--soft); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; max-height: 132px; overflow: auto; }
+.lyric-result-dialog [data-lyric-result-confirm] { min-height: 40px; min-width: 132px; margin: 22px auto 0; justify-content: center; font-variant-numeric: tabular-nums; }
+.lyric-result-dialog [data-lyric-result-confirm]:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 4px; }
+.lyric-result-dismiss-hint { margin: 12px 0 0; font-size: 11px; color: var(--soft); }
+@media (min-width: 1460px) {
+  dialog.lyric-dialog { width: 1320px; padding: 28px; }
+  .lyric-workspace { grid-template-columns: minmax(250px, .9fr) minmax(300px, 1.1fr) minmax(300px, 1fr); gap: 18px; }
+  .lyric-candidates { max-height: 388px; }
+  .lyric-ui .lyric-editor { height: 296px; }
+  .lyric-preview { height: 350px; }
+}
+@media (max-width: 1100px) {
+  .lyric-workspace { grid-template-columns: minmax(210px, .85fr) minmax(250px, 1.15fr); }
+  .lyric-preview-panel { grid-column: 1 / -1; }
+  .lyric-preview { height: 220px; }
+}
+@media (max-width: 980px) {
+  dialog.lyric-dialog, dialog.lyric-dialog.lyric-dialog-batch { width: calc(100vw - 40px); padding: 20px; max-height: 92dvh; }
+  .lyric-option-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lyric-directory { flex-wrap: wrap; }
+  .lyric-directory-copy { flex-basis: 100%; }
+  .lyric-directory-actions { justify-content: start; }
+  .lyric-dialog #modal-footer .button { padding-left: 12px; padding-right: 12px; }
+}
+@media (max-width: 640px) {
+  dialog.lyric-dialog, dialog.lyric-dialog.lyric-dialog-batch { width: calc(100vw - 20px); max-width: calc(100vw - 20px); max-height: 95dvh; padding: 16px; }
+  .lyric-dialog .modal-heading h2 { font-size: 19px; }
+  .lyric-dialog #modal-footer { gap: 8px; padding-top: 12px; }
+  .lyric-footer-status { flex: 0 0 100%; }
+  .lyric-song { flex-wrap: wrap; gap: 10px; }
+  .lyric-song > .text-button { margin-left: auto; }
+  .lyric-search { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .lyric-search > button { justify-self: start; }
+  .lyric-settings summary [data-lyric-setting-summary] { display: block; margin: 4px 0 0 18px; }
+  .lyric-workspace { grid-template-columns: minmax(0, 1fr); }
+  .lyric-preview-panel { grid-column: auto; }
+  .lyric-candidates { max-height: 260px; min-height: 120px; }
+  .lyric-empty { min-height: 120px; }
+  .lyric-option-grid { grid-template-columns: minmax(0, 1fr); }
+  .lyric-sources legend span { display: block; margin: 3px 0 0; }
+  .lyric-default-summary > span + span { border-left: 0; padding-left: 0; }
+  .lyric-result { gap: 8px; align-items: start; }
+  .lyric-result-number { display: none; }
+  .lyric-result-actions { max-width: 100px; }
+  .lyric-ui .text-button { padding-right: 4px; padding-left: 4px; }
+  .lyric-privacy { align-items: start; }
+  .lyric-privacy svg { margin-top: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lyric-dialog *, .lyric-dialog *::before, .lyric-dialog *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}

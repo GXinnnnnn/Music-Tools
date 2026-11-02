@@ -1,24 +1,52 @@
-# Public metadata providers — 0.1.0
+# 在线音乐信息来源
 
-`source/core/providers.cjs` is a dependency-free CommonJS module for Electron's main process. `provider-adapters.cjs` implements QQ, Kuwo and VGMdb alongside the NetEase, iTunes and MusicBrainz adapters. Public requests use global `fetch`, with no login, API key, local proxy or Python service. Local audio is never uploaded.
+Music Tools 支持 QQ 音乐、网易云音乐、iTunes、酷我音乐、MusicBrainz 和 VGMdb。默认选择 QQ 音乐与网易云音乐；匹配证据相当时 QQ 优先。搜索只发送文件名线索、允许使用的文本标签和时长，不上传音频。
 
-## Selection and field policy
+## 来源与适用范围
 
-The desktop defaults to **QQ Music, then NetEase**. Optional platforms are iTunes, Kuwo Music, MusicBrainz and VGMdb. Equivalent matching evidence uses platform order as a tie breaker; QQ never outranks a materially stronger candidate simply because it is QQ. VGMdb supplies album metadata/artwork, not verified recording identity; album composers are not substituted for track artists.
+| 来源 | 主要用途 |
+| --- | --- |
+| QQ 音乐 | 中文与国际曲目搜索、曲目信息、封面、歌词 |
+| 网易云音乐 | 曲目信息、封面、原文与可用译文歌词 |
+| iTunes | 曲目信息、专辑封面；中文、日文与国际曲目 |
+| 酷我音乐 | 曲目搜索、封面及可用歌词 |
+| MusicBrainz | 录音与发行信息，结合 Cover Art Archive 获取封面 |
+| VGMdb | 动漫、游戏与原声专辑信息，通过公共接口桥接访问 |
 
-Each metadata row has independent **sync** and **overwrite** controls, shared by single-song and batch completion. Enabled overwrite replaces an existing value; disabled overwrite fills only empty values. Existing user drafts count as current content. Unchecked fields cannot be staged even if a provider returns them. Unchecked local metadata is excluded from search conditions and ranking evidence; the filename still identifies the song. Duration remains technical recording evidence. A provider's missing or blank value never clears an existing field. The cover+artist+album preset selects exactly those three fields.
+各来源返回的字段、翻译和图片完整度不同。VGMdb 提供的专辑信息不代表已确定录音身份，专辑作曲者不会自动当成单曲艺术家。第三方来源可能限流、拒绝访问或暂时不可用，界面会保留其他来源结果并显示错误。
 
-The main process independently enforces this policy in `source/core/sync-policy.cjs`, before searches and again before drafts are returned. Fill-only rows with no missing selected fields are skipped without a provider request. An explicit empty field selection or source selection makes no requests. Lyrics, detail and cover requests are omitted when their fields are unnecessary. Only staging downloads a selected cover; identical cover URLs are shared within a batch.
+独立的歌词工作台仅使用 QQ 音乐和网易云音乐。常规标签补全在适用时可用 LRCLIB 补充歌词；工作台不会用其他来源替换用户所选平台。
 
-## Interface
+## 字段同步
+
+每个字段都有独立的“同步”与“覆盖”选择。只补空值时，现有标签与当前草稿均视作已有内容；覆盖模式允许替换已有值。未勾选字段不会进入草稿，也不会作为搜索与排序条件，文件名和技术时长仍可作为身份线索。来源缺失的字段不会清空本地值。
+
+“封面＋作者＋专辑”预设只选择这三项。无需封面或歌词时不会请求这些内容；没有缺失字段的只补空值任务会跳过。候选确认后才下载选中的封面，同一批任务共享相同图片请求。
+
+## 候选核对
+
+程序结合标题、艺术家、专辑、时长和版本词判断候选。搜索理解常见的“歌曲－歌手”“歌手－歌曲”等文件名，并保留完整含连字符的标题。自动搜索可以尝试更简洁的文件名线索，手动输入的查询不会被改写。
+
+相同标题、不同歌手、翻唱、现场、伴奏、重混音或截取片段需要核对。只依据标题或文件名的相似结果不会被当成已确认的录音；分数是辅助判断，不能证明身份。程序不做声纹识别，也不通过匹配重命名文件。
+
+批量结果可逐首切换候选、勾选或取消后再加入草稿。推荐候选要求足够的标题、艺术家及版本一致性，时长可用时也要相符；有疑点的结果保留人工检查。
+
+## 请求与隐私
+
+请求通过 Electron 主进程中的 `fetch` 发出，无需登录或 API Key。程序按站点控制频率，限制响应体大小，使用有界缓存、相同请求合并和有限重试；遇到超时、限流、错误响应或不合法图片会停止该请求并显示原因。取消任务也会取消等待和重试。
+
+本地文件路径不作为整段路径发送给来源。歌词、标签和图片通过对应平台公共接口读取；没有本地代理服务器或无限重试。
+
+## 开发接口
+
+`source/core/providers.cjs` 导出 `search`、`enrich`、`scoreCandidate`、`rankCandidates`；`source/core/provider-adapters.cjs` 提供部分平台适配。字段同步由 `source/core/sync-policy.cjs` 在主进程独立执行。
 
 ```js
-const { search, enrich, scoreCandidate, rankCandidates } = require('./source/core/providers.cjs');
+const { search, enrich } = require('./source/core/providers.cjs');
 const controller = new AbortController();
 const options = {
   sources: ['qq', 'netease'],
   fields: ['cover', 'artist', 'album'],
-  country: 'JP',
   local: { filename: 'First Love - 宇多田ヒカル.mp3', duration: 257 },
   signal: controller.signal
 };
@@ -26,58 +54,6 @@ const { candidates, errors } = await search('First Love 宇多田ヒカル', opt
 const tags = candidates.length ? await enrich(candidates[0], options) : null;
 ```
 
-`search(query, options)` resolves `{ candidates, errors }`. Omitted sources defaults to QQ and NetEase; an empty array makes no requests. Unknown sources produce `UNKNOWN_SOURCE`. An empty or >500-character query rejects. Manual queries remain authoritative. MusicBrainz artist/title qualification applies only when both eligible local fields are contained in the query.
+`search` 返回 `{ candidates, errors }`，候选标识带有来源命名空间。`enrich` 返回来源能够提供的标签、图片地址及歌词；部分请求失败时仍返回可用字段。空来源列表不发请求，未知来源会报告 `UNKNOWN_SOURCE`。默认单次请求超时 10 秒，最多重试一次；调用方可传入 `signal` 取消。
 
-Candidates contain `id, source, title, artist, album, albumArtist, year, track, disc, genre, duration, coverUrl, url, score`. IDs are namespaced. Text uses `''` for unknown values, numbers use `null`, duration is seconds. MusicBrainz can include release IDs; VGMdb can include album metadata. Preserve IDs for enrichment.
-
-`enrich(candidate, options)` returns the candidate plus available `artwork, lyrics, syncedLyrics, plainLyrics, translatedLyrics, errors`. Artwork fields contain remote URLs rather than embedded images. Lyrics prefer timed LRC. NetEase translations are retained when available, and instrumental recordings may have `instrumental: true`. `{ artwork: false }` and `{ lyrics: false }` also disable those request groups. Artwork or lyric failures retain usable metadata and produce visible partial errors.
-
-## Ranking and filename interpretation
-
-`scoreCandidate(local, candidate)` returns 0–99 using normalized Unicode title, artist, album and duration, with weights 55/30/10/5. CJK text uses character bigrams. Contradictory live/tour, instrumental/karaoke or remix/demo labels each subtract 12 points in either direction. Filename-only and title-only matches cap at 70; artist+title without album/duration caps at 94. `rankCandidates` orders by uncapped evidence before applying the display ceiling. A score is not proof of identity.
-
-Filename hints support song–artist, artist–song and song–artist–work, including single-word bands. Ambiguous direction is corroborated against provider title/artist fields. Whole hyphenated titles such as `Spider-Man` remain intact. Track prefixes and duplicate-copy suffixes are removed from queries only; filenames are never changed by matching. A film suffix is not treated as reliable album metadata. No acoustic fingerprinting is performed.
-
-Automatic filename queries may retry bounded, deduplicated simpler hints. Explicit manual queries are never rewritten. Batch search requests up to 50 candidates per source, ranks the combined pool, and displays the best eight per file. Title+duration without artist evidence remains unchecked for review. Users can change candidates and check individual rows before staging.
-
-## Request efficiency and limits
-
-- `signal`: cancellation rejects `AbortError`, including queued/retry/body waits. One cancelled subscriber does not abort another subscriber sharing a request.
-- `timeoutMs`: default 10,000 per request/body, constrained to 100–30,000.
-- `retries`: 0–2, default 1. Only network errors, timeouts, 429 and 5xx retry. Retry-After caps at five seconds; otherwise backoff starts at 500 ms.
-- `limit`: per-source result limit, default 20, maximum 50.
-- `country`: iTunes storefront, default CN, then JP and US when empty; duplicate storefronts are removed.
-- `cacheTtlMs`: in-memory bounded caching of equivalent responses; failed requests are not retained. Keys include request URL, response format and selected fields. `0` disables reuse, useful for deterministic tests. In-flight requests are deduplicated.
-- `fetch`, `throttleMs`: test injection points. Caches isolate different injected fetch functions.
-
-Requests are spaced per hostname: MusicBrainz/VGMdb 1,100 ms; QQ/NetEase/Kuwo/Cover Art Archive 350 ms; iTunes/LRCLIB 250 ms. Response bodies are bounded to 4 MiB. Artwork downloads separately validate real image bytes and bounded sizes. No unlimited retry or hidden local server is involved.
-
-Errors include `BLOCKED`, `RATE_LIMITED`, `TIMEOUT`, `NETWORK`, `NOT_FOUND`, `HTTP_ERROR`, `INVALID_RESPONSE`, `RESPONSE_TOO_LARGE`, `UNKNOWN_SOURCE` and `PROVIDER_ERROR`. A failed provider does not hide other candidates. Empty successful searches remain empty. Missing artwork/lyrics is surfaced, not invented.
-
-## Public endpoints
-
-- QQ: `c.y.qq.com/soso/fcgi-bin/client_search_cp`, `c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg`, artwork on `y.gtimg.cn`.
-- NetEase: `music.163.com/api/search/get`, `/api/song/detail/`, `/api/song/lyric`.
-- iTunes: `itunes.apple.com/search`, with 1200px artwork variants.
-- Kuwo: `search.kuwo.cn/r.s`, `artistpicserver.kuwo.cn/pic.web`, `www.kuwo.cn/openapi/v1/www/lyric/getlyric`. The legacy single-quoted search response is parsed as bounded data, never evaluated as code.
-- MusicBrainz: `musicbrainz.org/ws/2/recording/` JSON search.
-- Cover Art Archive: release and release-group image listings, preferring front-cover 1200px URLs.
-- VGMdb: the public `vgmdb.info/search/{query}?format=json` / `album/{id}?format=json` bridge. The official website is not bypassed when it blocks access.
-- LRCLIB: exact `/api/get`, then `/api/search`; fallback requires title and artist agreement and duration within 15 seconds when available.
-
-## Real network verification, 2026-10-30
-
-`node scripts/providers-live-check.cjs` records all six independent results in `artifacts/providers-live-check.json`. This is a connectivity record, not a guarantee of matching accuracy.
-
-| Platform | Actual observation |
-| --- | --- |
-| QQ | 晴天 / 周杰伦 / 叶惠美, 2003, 269s; cover URL and 1,388 lyric characters; no errors. |
-| NetEase | First Love / 宇多田ヒカル / First Love, 1999, 257.893s; cover URL and 1,127 lyric characters; no errors. |
-| iTunes JP | First Love candidates, 1200px artwork URL. LRCLIB returned HTTP 503 during this probe; retained tags/artwork. |
-| Kuwo | Search and artwork returned; the top result was a 15-second excerpt. Missing timed lyrics and LRCLIB 503 were reported. Candidate review is necessary. |
-| MusicBrainz | Search returned recordings and Cover Art Archive returned artwork. An unrelated spoken-word result ranked first without supplied local identity; review/local evidence is necessary. LRCLIB returned 503. |
-| VGMdb | HTTPS bridge disconnected before TLS establishment. HTTP bridge also closed the connection. Official `vgmdb.net/search` returned a 403 challenge. Adapter remains selectable with a visible error; live retrieval could not be verified on this network. |
-
-Earlier real checks also obtained LRCLIB timed lyrics and original MusicBrainz recordings. Availability varies and no failed service is represented as working.
-
-Deterministic coverage: `node --test tests/*.test.cjs` (105 passing across the project), including provider adapters, safe legacy parsing, field gating, priority ties, shared cache/cancellation, filename identity, retries and limits. `node scripts/ui-policy-check.cjs` additionally stages and writes selected fields to eight real disposable audio copies and verifies every other tag is unchanged. The opt-in historical live smoke remains available via `MUSIC_TOOLS_LIVE=1 node --test tests/providers.live.cjs`.
+开发者可运行 `npm run test:providers:live` 检查所在网络下各来源的可用性。该检查只代表当时的连通性，不代表任意歌曲都能正确匹配。确定性测试通过模拟网络响应验证排序、字段限制、超时、重试和取消等行为。

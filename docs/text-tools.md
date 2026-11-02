@@ -34,11 +34,11 @@ cleanLyrics('[00:01]Hello', {
 // 'Hello\n你好'
 ```
 
-## Integration contract and review findings
+## Integration
 
 The integrated main-process `text-tools` handler dispatches `filename`, `replace`, `lyrics`, `chinese` and `clear`. Chinese controls call `convertTags(item.tags, options)` to produce a selected-field draft. Lyrics controls support supplied translation text and all four layouts through `cleanLyrics`; the online candidate review also exposes layout selection when the provider returns `translatedLyrics`.
 
-Integration review findings were resolved: online translations can be staged with a selected layout; Chinese conversion is available in the tool panel; rename restoration returns the previous path, removes stale queue/draft/selection references and registers the restored path in the main-process allowlist. Settings JSON is parsed defensively and source/options values are normalized. Real Electron tests cover conversion drafts, rename/restore byte hashes, stale-path removal, lyrics cleanup and all-row disk/UI refresh.
+Online translations can be staged with a selected layout; Chinese conversion is available in the tool panel. Rename restoration returns the previous path, updates queue/draft/selection references and registers the restored path in the main-process allowlist. Settings JSON is parsed defensively and source/options values are normalized. Real Electron tests cover conversion drafts, rename/restore byte hashes, stale-path removal, lyrics cleanup and all-row disk/UI refresh.
 
 ## Validation
 

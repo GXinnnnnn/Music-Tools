@@ -7,7 +7,7 @@ const manifest = require('../package.json');
 const out = path.join(root, 'release', 'Music Tools');
 const inventoryName = '.music-tools-generated.json';
 const locales = new Set(['en-US.pak', 'zh-CN.pak']);
-const publicDocs = new Set(['docs/distribution.md', 'docs/providers.md', 'docs/text-tools.md']);
+const publicDocs = new Set(['docs/distribution.md', 'docs/providers.md', 'docs/text-tools.md', 'docs/lyrics.md']);
 function isPublicDoc(relative) {
   return publicDocs.has(relative) || /^docs\/images\/[a-zA-Z0-9._-]+\.(png|webp|jpg)$/i.test(relative);
 }
@@ -113,6 +113,14 @@ async function buildPortable() {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     if (from) fs.copyFileSync(from, target);
     else fs.writeFileSync(target, JSON.stringify({ name: manifest.name, productName: manifest.productName, version: manifest.version, main: manifest.main, description: manifest.description, license: manifest.license }, null, 2));
+  }
+  // The public README also opens locally beside the portable application.
+  const readmePath = generatedPath('README.md');
+  if (fs.existsSync(readmePath)) {
+    const portableReadme = fs.readFileSync(readmePath, 'utf8')
+      .replaceAll('src="source/', 'src="resources/app/source/')
+      .replaceAll('](LICENSE)', '](LICENSE-Music-Tools)');
+    fs.writeFileSync(readmePath, portableReadme);
   }
   // rcedit may replace the file atomically; all targets above are verified before editing.
   const executable = generatedPath('Music Tools.exe');

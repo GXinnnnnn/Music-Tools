@@ -28,7 +28,10 @@ const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).d
   page.on('pageerror', error => errors.push(error.message));
   const invoke = (name, ...args) => page.evaluate(({ name, args }) => window.music.invoke(name, ...args), { name, args });
   const paths = () => page.locator('.audio-tile').evaluateAll(tiles => tiles.map(tile => tile.dataset.path));
-  const idle = () => expect(page.locator('#operation-status .busy-indicator')).toHaveCount(0, { timeout });
+  const idle = async () => {
+    await expect(page.locator('#operation-status .busy-indicator')).toHaveCount(0, { timeout });
+    await page.waitForFunction(() => typeof backgroundTask === 'undefined' || backgroundTask === null, null, { timeout });
+  };
   const closeModal = async () => {
     if (await page.locator('#modal').evaluate(dialog => dialog.open)) await page.locator('#modal-close').click();
   };

@@ -31,7 +31,7 @@ const icons = {
     '<path d="m10 3-1 3-3 1-3 2 1 3-1 3 3 2 3 1 1 3h4l1-3 3-1 3-2-1-3 1-3-3-2-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/>',
   shield:
     '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
-  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4 2c-1 .5-1.5 1-1.5 2m0 3h.01"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-2.9 2.3-2.9 4"/><circle cx="12" cy="17" r=".65" fill="currentColor" stroke="none"/>',
   "arrow-right": '<path d="M4 12h16m-6-6 6 6-6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
@@ -40,7 +40,7 @@ const icons = {
   moon: '<path d="M20.5 13A9 9 0 0 1 11 3.5 9 9 0 1 0 20.5 13Z"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   refresh:
-    '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.2 6.2A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.8 5.8"/>',
+    '<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>',
   "minus-circle": '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
   trash: '<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v6m4-6v6"/>',
   save: '<path d="M5 3h12l4 4v14H3V3Zm2 0v7h10V3M7 21v-7h10v7"/>',
@@ -107,6 +107,7 @@ let settings = {
     : storedSettings.fillOnly === false ? Object.keys(SYNC_FIELDS) : [],
   fillOnly: storedSettings.fillOnly !== false,
   threshold: Math.max(70, Math.min(99, Number(storedSettings.threshold) || 85)),
+  backupEnabled: true,
   country: ["CN", "JP", "US"].includes(storedSettings.country)
     ? storedSettings.country
     : "CN",
@@ -131,7 +132,62 @@ let files = [],
   persistTimer,
   undoQueue = null,
   playing = null;
+let backgroundTask = null;
+const previewTargets = () => selected.size ? [...selected] : active && current(active) ? [active] : [];
 const current = (p) => files.find((f) => f.path === p);
+function updateBackupHint() {
+  const enabled = settings.backupEnabled;
+  const title = document.querySelector('.local-badge strong'), note = document.querySelector('.local-badge small');
+  if(title)title.textContent = enabled ? '本地编辑 · 自动备份' : '本地编辑 · 备份已关闭';
+  if(note)note.textContent = enabled ? '已有标签修改前自动备份' : '可在偏好设置中重新开启';
+  document.querySelectorAll('.backup-hint').forEach(el => el.hidden = !enabled);
+}
+function renderBackgroundTask() {
+  const strip = $('#background-task');
+  strip.hidden = !backgroundTask && !batchSession;
+  $('#background-task-stop').hidden = !backgroundTask;
+  $('#background-task-progress').hidden = !backgroundTask;
+  if (!backgroundTask) {
+    if(batchSession) {
+      $('#background-task-label').textContent = batchSession.canceled ? '批量任务已停止，已有结果已保留' : '批量补全结果已就绪';
+      $('#background-task-count').textContent = batchSession.items.length + ' 首 · ' + batchSession.items.filter(i=>i.staged).length + ' 首已加入草稿';
+      $('#background-task-view').hidden = false;
+    }
+    return;
+  }
+  const {kind,done,total,canceling} = backgroundTask;
+  $('#background-task-label').textContent = (canceling ? '正在停止 · ' : '') + ({refresh:'重新读取标签与封面',match:'联网匹配',stage:'获取封面与歌词'}[kind]);
+  $('#background-task-count').textContent = done + ' / ' + total;
+  $('#background-task-progress').max = Math.max(1,total); $('#background-task-progress').value = done;
+  $('#background-task-view').hidden = kind === 'refresh';
+  $('#background-task-stop').disabled = !!canceling;
+}
+async function runBackground(kind, total, task) {
+  if (busy || backgroundTask) { toast('请等待当前任务完成'); return; }
+  const state = backgroundTask = {kind,total,done:0,id:crypto.randomUUID()};
+  renderBackgroundTask(); updateButtons();
+  try { return await task(state.id); }
+  catch (error) {
+    if ((kind === 'match' || kind === 'stage') && batchSession?.pending) {
+      batchSession.pending = false; batchSession.canceled = true;
+      batchSession.message = '任务未完成：' + error.message + '。已完成的结果仍可查看。';
+      if ($('#batch-results') && $('#modal').open) finishBatchView();
+    }
+    toast(error.message,'error'); status('任务未完成，请查看错误信息。');
+  }
+  finally { if (backgroundTask === state) backgroundTask = null; renderBackgroundTask(); updateButtons(); updateBatchSelection(); }
+}
+async function stopBackgroundTask() {
+  if(!backgroundTask)return;
+  backgroundTask.canceling=true; renderBackgroundTask();
+  await api('cancel-task',backgroundTask.kind);
+}
+window.music.onTaskProgress(event => {
+  if(!backgroundTask || event.operationId !== backgroundTask.id)return;
+  Object.assign(backgroundTask,{done:event.done,total:event.total}); renderBackgroundTask();
+  if($('#batch-progress') && event.kind !== 'refresh')$('#batch-progress').textContent = (event.kind === 'stage' ? '正在获取封面与歌词 ' : '正在匹配 ') + event.done + ' / ' + event.total;
+  if($('#batch-progress-bar') && event.kind !== 'refresh')$('#batch-progress-bar').style.width = (event.done / Math.max(1,event.total)*100)+'%';
+});
 const tags = (p) => ({ ...current(p)?.tags, ...drafts[p]?.tags });
 const cover = (p) =>
   drafts[p] && Object.hasOwn(drafts[p], "cover")
@@ -177,7 +233,7 @@ function status(message) {
     `${busy ? '<span class="busy-indicator"></span>' : icon("shield")}<span>${esc(message)}</span>`;
 }
 async function run(task, message) {
-  if (busy) {
+  if (busy || backgroundTask) {
     toast("当前操作完成后即可继续");
     return;
   }
@@ -207,7 +263,7 @@ function persist() {
     250,
   );
 }
-function patch(paths, values, coverValue) {
+function patch(paths, values, coverValue, renderNow = true) {
   for (const p of paths) {
     if (!current(p)) continue;
     const d = drafts[p] || { tags: {} };
@@ -225,9 +281,7 @@ function patch(paths, values, coverValue) {
     done.delete(p);
   }
   persist();
-  renderCounts();
-  renderGrid();
-  updateButtons();
+  if(renderNow) { renderCounts(); renderGrid(); updateButtons(); }
 }
 function visibleFiles() {
   let list = files.filter(
@@ -301,28 +355,35 @@ function renderGrid() {
   hydrate();
 }
 function updateButtons() {
-  const count = selected.size;
+  const count = selected.size, locked = busy || !!backgroundTask;
   $$('[data-action="save-all"]').forEach(
-    (b) => (b.disabled = busy || !Object.keys(drafts).length),
+    (b) => (b.disabled = locked || !Object.keys(drafts).length),
   );
-  $$('[data-action="batch-match"],[data-action="remove"]').forEach(
-    (b) => (b.disabled = busy || !count),
+  $$('[data-action="batch-match"],[data-action="remove"],[data-action="extract-lyrics"]').forEach(
+    (b) => (b.disabled = locked || !count),
   );
   $$('[data-action="clear"],[data-action="refresh"]').forEach(
-    (b) => (b.disabled = busy || !files.length),
+    (b) => (b.disabled = locked || !files.length),
   );
   $$(
     '[data-action="import"],[data-action="import-folder"],[data-action="demo"]',
-  ).forEach((b) => (b.disabled = busy));
+  ).forEach((b) => (b.disabled = locked));
   $("#select-all").disabled = busy || !files.length;
   $$('[data-preview-action="save"]').forEach(
-    (b) => (b.disabled = busy || ![...selected].some((p) => drafts[p])),
+    (b) => (b.disabled = locked || !previewTargets().some((p) => drafts[p])),
   );
+  $$('[data-preview-action="match"],[data-preview-action="extract-lyrics"],[data-preview-action="clear-all-tags"]').forEach(b => b.disabled = locked || (b.dataset.previewAction === 'clear-all-tags' && selected.size > 1));
+  const empty = !current(active);
+  $('#preview-card').dataset.empty = String(empty);
+  $('#preview-card').querySelectorAll('[data-tag]').forEach(element => { element.disabled = empty; });
+  if (empty) $('#preview-card').querySelectorAll('[data-preview-action]').forEach(button => { button.disabled = true; });
+  else $$('[data-preview-action="discard"]').forEach(button => { button.disabled = locked || !previewTargets().some(p => drafts[p]); });
 }
 function render() {
   renderCounts();
   renderGrid();
   renderPreview();
+  updateBackupHint();
   updateButtons();
 }
 function pick(p, event = {}) {
@@ -337,7 +398,7 @@ function pick(p, event = {}) {
   } else if (event.ctrlKey || event.metaKey) {
     selected.has(p) ? selected.delete(p) : selected.add(p);
   } else selected = new Set([p]);
-  active = selected.has(p) ? p : [...selected].at(-1) || null;
+  active = selected.has(p) ? p : [...selected].at(-1) || files[0]?.path || null;
   previewTab = "tags";
   render();
 }
@@ -351,23 +412,27 @@ function fieldHtml(key, wide = false) {
   const different =
     multi &&
     new Set([...selected].map((p) => String(tags(p)[key] || ""))).size > 1;
-  const changed = [...selected].some(
+  const changed = previewTargets().some(
     (p) => drafts[p]?.tags && Object.hasOwn(drafts[p].tags, key),
   );
   return `<label class="field ${wide ? "wide" : ""}"><span>${FIELDS[key]}${changed ? "<small>草稿</small>" : ""}</span><${key === "comment" ? "textarea" : "input"} data-tag="${key}" class="${changed ? "changed" : ""}" placeholder="${different ? "多个不同值，输入后统一修改" : "未填写"}" ${key === "comment" ? "" : `value="${esc(value)}"`}>${key === "comment" ? esc(value) + "</textarea>" : ""}</label>`;
 }
 function renderPreview() {
   const card = $("#preview-card");
-  if (!active || !current(active) || !selected.size) {
-    card.hidden = true;
-    return;
-  }
   card.hidden = false;
-  const f = current(active),
+  if (!active || !current(active)) active = files[0]?.path || null;
+  const empty = !active;
+  const f = current(active) || {path: '', filename: '—', format: '—'},
     t = tags(active),
     multi = selected.size > 1;
-  const changed = [...selected].filter((p) => drafts[p]).length;
-  card.innerHTML = `<div class="preview-heading"><span>${icon(multi ? "grid" : "info")}${multi ? "批量预览" : "音频预览"} <span class="muted">/ ${multi ? selected.size + " 首" : f.format}</span></span><button class="icon-button" data-preview-action="close" aria-label="收起预览卡片">${icon("close")}</button></div><div class="preview-content"><div class="preview-art">${artwork(cover(active), "所选音频封面", false)}<button class="cover-edit" data-preview-action="cover">${icon("image")}更换封面${multi ? " · 全部" : ""}</button></div><h2 class="preview-title">${esc(multi ? `已选择 ${selected.size} 首音频` : t.title || f.filename)}</h2><p class="preview-subtitle">${esc(multi ? "修改的字段会应用到全部所选音频" : t.artist || "未知艺术家")}</p><div class="media-details"><span>${esc(f.format)}</span><span>${duration(f.duration)}</span><span>${f.sampleRate ? (f.sampleRate / 1000).toFixed(1) + " kHz" : "—"}</span><span>${f.bitrate ? Math.round(f.bitrate / 1000) + " kbps" : size(f.size)}</span></div><div class="preview-quick-actions"><button class="button primary" data-preview-action="match">${icon("sparkle")}${multi ? "批量补全" : "补全信息"}</button><button class="button secondary" data-preview-action="play" ${multi ? "disabled" : ""}>${icon(playing === active ? "pause" : "play")}试听</button></div><div class="preview-tabs" role="tablist">${[["tags", "可编辑信息"], ["lyrics", "歌词"], ["file", "文件详情"], ...(matches[active]?.length ? [["matches", "匹配结果"]] : [])].map(([key, label]) => `<button role="tab" aria-selected="${previewTab === key}" class="${previewTab === key ? "active" : ""}" data-tab="${key}">${label}</button>`).join("")}</div><div id="preview-panel">${previewTab === "tags" ? `${multi ? '<div class="batch-note">只会写入你实际修改的字段。不同值显示为空，保留不操作即可。</div>' : ""}<div class="field-grid">${["title", "artist", "album", "albumArtist"].map((k) => fieldHtml(k, true)).join("")}${["year", "genre", "track", "disc", "composer", "lyricist"].map((k) => fieldHtml(k)).join("")}${fieldHtml("comment", true)}</div>` : previewTab === "lyrics" ? `<div class="mini-actions"><button class="button secondary" data-preview-action="import-lyrics">导入 LRC / TXT</button><button class="button secondary" data-preview-action="lyrics-tools">整理歌词</button></div><label class="field"><span>内嵌歌词${multi ? " · 修改后应用到所选" : ""}</span><textarea class="lyrics-editor" data-tag="lyrics" placeholder="粘贴歌词，或通过补全信息联网获取">${esc(multi ? consensus("lyrics") : t.lyrics || "")}</textarea></label><p class="field-hint">支持带时间标签的 LRC 与纯文本歌词。编辑先暂存为草稿。</p>` : previewTab === "file" ? `<dl class="file-details"><dt>文件名称</dt><dd>${esc(f.filename)}</dd><dt>完整路径</dt><dd>${esc(f.path)}</dd><dt>格式 / 文件大小</dt><dd>${esc(f.format)} / ${size(f.size)}</dd><dt>时长 / 采样率 / 码率</dt><dd>${duration(f.duration)} / ${f.sampleRate || "—"} Hz / ${f.bitrate ? Math.round(f.bitrate / 1000) : "—"} kbps</dd><dt>声道 / 位深</dt><dd>${f.channels || "—"} / ${f.bitsPerSample || "—"} bit</dd><dt>修改时间</dt><dd>${f.modifiedAt ? esc(new Date(f.modifiedAt).toLocaleString("zh-CN")) : "—"}</dd><dt>封面与歌词</dt><dd>${cover(active) ? "已含封面" : "尚无封面"} · ${t.lyrics ? "已有歌词" : "尚无歌词"}</dd></dl><button class="button secondary" data-preview-action="locate">${icon("folder")}在资源管理器中显示</button>` : `<div class="preview-matches">${(matches[active] || []).map((c, i) => candidateHtml(c, i, true)).join("")}</div>`}</div></div><div class="preview-footer"><button class="button primary" data-preview-action="save" ${!changed || busy ? "disabled" : ""}>${icon("save")}${changed ? `写入${multi ? changed + " 首" : "此音频"}的修改` : "尚无待写入修改"}</button><div class="preview-footer-line"><span>写入前自动备份</span><button class="text-button" data-preview-action="discard">撤销所选草稿</button></div></div>`;
+  const changed = previewTargets().filter((p) => drafts[p]).length;
+  card.innerHTML = `<div class="preview-heading"><span>${icon(multi ? "grid" : "info")}${multi ? "批量预览" : "音频预览"} <span class="muted">/ ${multi ? selected.size + " 首" : f.format}</span></span><button class="icon-button" data-preview-action="close" aria-label="取消多选，预览第一首音频" title="取消多选，预览第一首音频">${icon("close")}</button></div><div class="preview-content"><div class="preview-art">${artwork(cover(active), "所选音频封面", false)}<button class="cover-edit" data-preview-action="cover">${icon("image")}更换封面${multi ? " · 全部" : ""}</button></div><h2 class="preview-title">${esc(multi ? `已选择 ${selected.size} 首音频` : t.title || f.filename)}</h2><p class="preview-subtitle">${esc(multi ? "修改的字段会应用到全部所选音频" : t.artist || "未知艺术家")}</p><div class="media-details"><span>${esc(f.format)}</span><span>${duration(f.duration)}</span><span>${f.sampleRate ? (f.sampleRate / 1000).toFixed(1) + " kHz" : "—"}</span><span>${f.bitrate ? Math.round(f.bitrate / 1000) + " kbps" : size(f.size)}</span></div><div class="preview-quick-actions"><button class="button primary" data-preview-action="match">${icon("sparkle")}${multi ? "批量补全" : "补全信息"}</button><button class="button secondary" data-preview-action="play" ${multi ? "disabled" : ""}>${icon(playing && playing === active ? "pause" : "play")}试听</button></div><button class="button secondary lyric-preview-entry" data-preview-action="extract-lyrics">${icon("lyrics")}${multi ? "批量提取歌词" : "提取歌词 · 默认 SRT"}</button><div class="preview-tabs" role="tablist">${[["tags", "可编辑信息"], ["lyrics", "歌词"], ["file", "文件详情"], ...(matches[active]?.length ? [["matches", "匹配结果"]] : [])].map(([key, label]) => `<button role="tab" aria-selected="${previewTab === key}" class="${previewTab === key ? "active" : ""}" data-tab="${key}">${label}</button>`).join("")}</div><div id="preview-panel">${previewTab === "tags" ? `${multi ? '<div class="batch-note">只会写入你实际修改的字段。不同值显示为空，保留不操作即可。</div>' : ""}<div class="field-grid">${["title", "artist", "album", "albumArtist"].map((k) => fieldHtml(k, true)).join("")}${["year", "genre", "track", "disc", "composer", "lyricist"].map((k) => fieldHtml(k)).join("")}${fieldHtml("comment", true)}</div>` : previewTab === "lyrics" ? `<div class="mini-actions"><button class="button secondary" data-preview-action="import-lyrics">导入 LRC / TXT</button><button class="button secondary" data-preview-action="lyrics-tools">整理歌词</button></div><label class="field"><span>内嵌歌词${multi ? " · 修改后应用到所选" : ""}</span><textarea class="lyrics-editor" data-tag="lyrics" placeholder="粘贴歌词，或通过补全信息联网获取">${esc(multi ? consensus("lyrics") : t.lyrics || "")}</textarea></label><p class="field-hint">支持带时间标签的 LRC 与纯文本歌词。编辑先暂存为草稿。</p>` : previewTab === "file" ? `<dl class="file-details"><dt>文件名称</dt><dd>${esc(f.filename)}</dd><dt>完整路径</dt><dd>${esc(f.path)}</dd><dt>格式 / 文件大小</dt><dd>${esc(f.format)} / ${size(f.size)}</dd><dt>时长 / 采样率 / 码率</dt><dd>${duration(f.duration)} / ${f.sampleRate || "—"} Hz / ${f.bitrate ? Math.round(f.bitrate / 1000) : "—"} kbps</dd><dt>声道 / 位深</dt><dd>${f.channels || "—"} / ${f.bitsPerSample || "—"} bit</dd><dt>修改时间</dt><dd>${f.modifiedAt ? esc(new Date(f.modifiedAt).toLocaleString("zh-CN")) : "—"}</dd><dt>封面与歌词</dt><dd>${cover(active) ? "已含封面" : "尚无封面"} · ${t.lyrics ? "已有歌词" : "尚无歌词"}</dd></dl><button class="button secondary" data-preview-action="locate">${icon("folder")}在资源管理器中显示</button>` : `<div class="preview-matches">${(matches[active] || []).map((c, i) => candidateHtml(c, i, true)).join("")}</div>`}</div></div><div class="preview-footer"><button class="button primary" data-preview-action="save" ${!changed || busy ? "disabled" : ""}>${icon("save")}${changed ? `写入${multi ? changed + " 首" : "此音频"}的修改` : "尚无待写入修改"}</button><div class="preview-footer-actions"><div class="preview-footer-links"><button class="clear-all-tags-link" data-preview-action="clear-all-tags" ${multi ? 'disabled title="请只选择一首音频"' : ''}>删除所有条目</button><button class="discard-draft-link" data-preview-action="discard">撤销所选草稿</button></div><span class="backup-hint" ${settings.backupEnabled ? '' : 'hidden'}>写入前自动备份</span></div></div>`;
+  if (empty) {
+    card.querySelectorAll('.media-details span,.file-details dd,.preview-title,.preview-subtitle').forEach(element => { element.textContent = '—'; });
+    card.querySelectorAll('[data-tag]').forEach(element => { element.value = ''; element.placeholder = '—'; });
+  }
+  updateBackupHint();
+  updateButtons();
 }
 async function addResult(result) {
   const existing = new Set(files.map((f) => f.path));
@@ -380,7 +445,7 @@ async function addResult(result) {
     }
   }
   if (count) {
-    active = result.files.find((f) => current(f.path))?.path || null;
+    active = files[0]?.path || null;
     selected = active ? new Set([active]) : new Set();
     filter = "all";
     updateNav();
@@ -403,10 +468,11 @@ async function importFiles(folder = false) {
     "正在读取音频标签与封面…",
   );
 }
-async function refreshAll(silent = false) {
+async function refreshAll(silent = false, operationId = "") {
   const r = await api(
     "refresh",
     files.map((f) => f.path),
+    { operationId },
   );
   const records = new Map(r.files.map((f) => [f.path, f]));
   files = files.map((f) => records.get(f.path) || f);
@@ -414,11 +480,11 @@ async function refreshAll(silent = false) {
   render();
   if (r.errors?.length && !silent)
     report("部分文件刷新失败", r.errors, "成功读取的音频与封面已刷新。");
-  else if (!silent) toast("全部音频的封面与标签已刷新");
+  else if (!silent) toast(r.canceled ? `刷新已停止，已读取 ${r.files.length} 首` : "全部音频的封面与标签已刷新");
   return r;
 }
 function removeQueue(all) {
-  if (busy) return;
+  if (busy || backgroundTask) return;
   const paths = all ? new Set(files.map((f) => f.path)) : new Set(selected);
   if (!paths.size) return;
   undoQueue = {
@@ -435,7 +501,12 @@ function removeQueue(all) {
     delete matches[p];
   }
   selected = new Set([...selected].filter((p) => !paths.has(p)));
-  active = [...selected].at(-1) || null;
+  active = [...selected].at(-1) || files[0]?.path || null;
+  if (batchSession) {
+    batchSession.items = batchSession.items.filter(item => current(item.path));
+    if (!batchSession.items.length) batchSession = null;
+    renderBackgroundTask();
+  }
   persist();
   render();
   toast(
@@ -471,6 +542,21 @@ function report(title, errors, intro = "") {
     `<button class="button primary" data-modal-action="close">知道了</button>`,
   );
 }
+async function clearAllTags() {
+  if (selected.size > 1 || !active) return;
+  const p = active, record = current(p);
+  await run(async () => {
+    const result = await api('clear-tags', [{ path: p, stamp: record.stamp }]);
+    for (const item of result.results || []) {
+      const index = files.findIndex(f => f.path === item.path);
+      if (index >= 0 && item.record) files[index] = item.record;
+      delete drafts[item.path]; delete matches[item.path]; done.delete(item.path);
+    }
+    persist(); render();
+    if (result.errors?.length) report('清空未完成', result.errors, '文件未能清空，请处理原因后重试。');
+    else { toast('已删除此音频的全部标签与封面'); status('已清空标签与图片，文件名、格式和文件时间已保留。'); }
+  }, settings.backupEnabled ? '正在备份并清空此音频的全部标签…' : '正在清空此音频的全部标签…');
+}
 async function writeFiles(paths) {
   const jobs = paths
     .filter((p) => drafts[p])
@@ -497,7 +583,7 @@ async function writeFiles(paths) {
         `${r.results.length} 首成功；失败项保留草稿，请处理原因后重试。`,
       );
     else toast(`${r.results.length} 首写入完成，已统一刷新全部封面`);
-  }, "正在备份并写入音频，完成后将刷新全部封面…");
+  }, settings.backupEnabled ? "正在写入音频，已有标签会自动备份…" : "正在写入音频，自动备份已关闭…");
 }
 function providerOptions() {
   return `<fieldset class="provider-picker"><legend>搜索平台 <span>同等匹配优先 QQ 音乐</span></legend><div class="provider-options">${PLATFORM_ORDER.map((s) => `<label><input type="checkbox" data-source="${s}" ${settings.sources.includes(s) ? "checked" : ""}>${sources[s]}</label>`).join("")}</div></fieldset>`;
@@ -603,6 +689,7 @@ let searchTarget = null,
   searchGeneration = 0;
 const matchPolicies = {};
 async function openMatch(p = active) {
+  if (busy || backgroundTask) { toast('请先完成或停止当前任务'); return; }
   if (!p) return;
   if (selected.size > 1) return batchMatch();
   searchTarget = p;
@@ -669,6 +756,7 @@ async function doSearch() {
 }
 let reviewPayload = null;
 async function candidateReview(candidate, p) {
+  if (busy || backgroundTask) { toast('请先完成或停止当前任务'); return; }
   const policy = structuredClone(matchPolicies[p] || completionOptions());
   if (!candidate || !canComplete(policy)) return;
   const eligible = effectiveSyncFields(p, policy);
@@ -763,84 +851,96 @@ function renderBatchRows() {
 function updateBatchSelection(){
   if(!batchSession)return;
   const count=batchSession.items.filter(i=>i.checked&&!i.staged&&i.candidates[i.choice]).length;
-  const button=$('#apply-batch');if(button){button.disabled=!count||busy;button.textContent=`采用已勾选的 ${count} 首 → 草稿`;}
+  const button=$('#apply-batch');if(button){button.disabled=!count||busy||!!backgroundTask;button.textContent=`采用已勾选的 ${count} 首 → 草稿`;}
   const mode=$('#batch-filter')?.value||'all';
   $$('[data-batch-row]').forEach(row=>row.hidden=mode!=='all'&&row.dataset.state!==mode);
   if($('#batch-summary'))$('#batch-summary').textContent=`${batchSession.items.length} 首已搜索 · ${count} 首已勾选 · ${batchSession.items.filter(i=>i.staged).length} 首已生成草稿`;
 }
 async function batchMatch() {
   const paths=[...selected];if(!paths.length){toast('请先选中要补全的音频');return;}
-  if(paths.length===1)return openMatch(paths[0]);if(busy)return;
+  if(paths.length===1)return openMatch(paths[0]);if(busy||backgroundTask)return;
   batchSession=null;
-  modal(`批量补全 ${paths.length} 首`,`<p class="modal-description">先搜索、逐首核对候选并勾选，再生成草稿。仅文件名不能证明录音身份；未勾选的项目保持原样。</p>${providerOptions()}${policyOptionsHtml()}<div class="inline-status" id="batch-progress" role="status" aria-live="polite">准备搜索 ${paths.length} 首音频</div><div class="progress"><div id="batch-progress-bar"></div></div><div id="batch-toolbar" hidden><span id="batch-summary"></span><div class="mini-actions"><select id="batch-filter" class="form-input" aria-label="筛选匹配状态"><option value="all">全部结果</option><option value="ready">符合预选条件</option><option value="review">待核对</option><option value="empty">无结果</option><option value="error">失败</option><option value="staged">已生成草稿</option></select><button class="button secondary" id="batch-select-all">勾选所有有候选项</button><button class="button secondary" id="batch-unselect">取消勾选</button></div></div><div id="batch-results"></div>`,`<button class="button secondary" data-modal-action="cancel-search">停止任务</button><button class="button primary" id="start-batch">开始匹配</button>`,'BATCH MATCH / REVIEW FIRST');
+  modal(`批量补全 ${paths.length} 首`,`<p class="modal-description">先搜索、逐首核对候选并勾选，再生成草稿。仅文件名不能证明录音身份；未勾选的项目保持原样。</p>${providerOptions()}${policyOptionsHtml()}<div class="inline-status" id="batch-progress" role="status" aria-live="polite">准备搜索 ${paths.length} 首音频</div><div class="progress"><div id="batch-progress-bar"></div></div><div id="batch-toolbar" hidden><span id="batch-summary"></span><div class="mini-actions"><select id="batch-filter" class="form-input" aria-label="筛选匹配状态"><option value="all">全部结果</option><option value="ready">符合预选条件</option><option value="review">待核对</option><option value="empty">无结果</option><option value="error">失败</option><option value="staged">已生成草稿</option></select><button class="button secondary" id="batch-select-all">勾选所有有候选项</button><button class="button secondary" id="batch-unselect">取消勾选</button></div></div><div id="batch-results"></div>`,`<button class="button secondary" data-modal-action="background-task">后台继续</button><button class="button secondary" data-modal-action="cancel-search">停止任务</button><button class="button primary" id="start-batch">开始匹配</button>`,'BATCH MATCH / REVIEW FIRST');
   bindPolicyControls();
   $('#start-batch').onclick=()=>{
     const options=structuredClone({...completionOptions(),limit:50});
     if(!canComplete(options,$('#batch-progress')))return;
-    return run(async()=>{
+    return runBackground('match',paths.length,async operationId=>{
     $('#start-batch').disabled=true;
     lockPolicyControls();
     // Freeze field and provider choices for search, retries, and staging.
     const policy={...structuredClone(options),threshold:settings.threshold};
-    const r=await api('batch-match',paths.map(p=>({path:p,query:searchQuery(p),local:localMeta(p)})),options);
-    if(!$('#batch-results'))return;
+    batchSession={options,policy,pending:'match',canceled:false,items:[]};
+    const r=await api('batch-match',paths.map(p=>({path:p,query:searchQuery(p),local:localMeta(p)})),{...options,operationId});
     const byPath=new Map(r.results.map(item=>[item.path,item]));
-    batchSession={options,policy,canceled:false,items:paths.map(p=>{const item=byPath.get(p),error=r.errors.find(e=>e.path===p);const recommended=item?.recommendedIndex===0&&item?.candidates[0]?.score>=policy.threshold;return {path:p,query:searchQuery(p),candidates:item?.candidates||[],errors:item?.errors||[],error:error?.error||(!item?'尚未搜索':''),choice:0,checked:recommended,recommended,staged:false};})};
+    batchSession={options,policy,pending:false,canceled:r.canceled,items:paths.map(p=>{const item=byPath.get(p),error=r.errors.find(e=>e.path===p);const recommended=item?.recommendedIndex===0&&item?.candidates[0]?.score>=policy.threshold;return {path:p,query:searchQuery(p),candidates:item?.candidates||[],errors:item?.errors||[],error:error?.error||(!item?'尚未搜索':''),choice:0,checked:recommended,recommended,staged:false};})};
     for(const item of batchSession.items){matches[item.path]=item.candidates;matchPolicies[item.path]=structuredClone(options);}
-    $('#batch-progress').textContent=`${r.canceled?'已停止':'搜索完成'}，${r.results.length} / ${paths.length} 首已搜索。勾选表示你已核对候选，仍需点击写入才会修改文件。`;
-    $('#batch-toolbar').hidden=false;
-    $('#modal-footer').innerHTML='<button class="button secondary" data-modal-action="close">完成审核</button><button class="button primary" id="apply-batch">采用勾选项 → 草稿</button>';
-    $('#apply-batch').onclick=()=>stageBatch();
-    $('#batch-filter').onchange=updateBatchSelection;
-    $('#batch-select-all').onclick=()=>{for(const item of batchSession.items)if(!item.staged&&item.candidates[item.choice])item.checked=true;renderBatchRows();};
-    $('#batch-unselect').onclick=()=>{for(const item of batchSession.items)item.checked=false;renderBatchRows();};
-    renderBatchRows();renderPreview();status('匹配已完成，请逐首核对并勾选。');
-  },'正在逐首联网匹配…').finally(updateBatchSelection);
+    if($('#batch-results') && $('#modal').open) finishBatchView();
+    else toast(r.canceled?'匹配已停止，已完成的结果已保留':'匹配已完成，可查看并核对候选','',{label:'查看结果',run:showBatchResults});
+    renderPreview();updateButtons();status('匹配已完成，请逐首核对并勾选。');
+  }).finally(updateBatchSelection);
   };
+}
+function batchToolbarHtml() {
+  return '<div id="batch-toolbar"><span id="batch-summary"></span><div class="mini-actions"><select id="batch-filter" class="form-input" aria-label="筛选匹配状态"><option value="all">全部结果</option><option value="ready">符合预选条件</option><option value="review">待核对</option><option value="empty">无结果</option><option value="error">失败</option><option value="staged">已生成草稿</option></select><button class="button secondary" id="batch-select-all">勾选所有有候选项</button><button class="button secondary" id="batch-unselect">取消勾选</button></div></div>';
+}
+function finishBatchView() {
+  if(!batchSession || !$('#batch-results'))return;
+  $('#batch-progress').textContent=batchSession.message || ((batchSession.canceled?'已停止':'搜索完成')+'，'+batchSession.items.length+' 首结果已保留。核对后采用到草稿，再点击写入。');
+  $('#batch-toolbar').hidden=false;
+  $('#modal-footer').innerHTML='<button class="button secondary" data-modal-action="close">完成审核</button><button class="button primary" id="apply-batch">采用勾选项 → 草稿</button>';
+  $('#apply-batch').onclick=()=>stageBatch();
+  $('#batch-filter').onchange=updateBatchSelection;
+  $('#batch-select-all').onclick=()=>{for(const item of batchSession.items)if(!item.staged&&item.candidates[item.choice])item.checked=true;renderBatchRows();};
+  $('#batch-unselect').onclick=()=>{for(const item of batchSession.items)item.checked=false;renderBatchRows();};
+  renderBatchRows();
+}
+function showBatchResults() {
+  if(!batchSession)return;
+  const pending=!!batchSession.pending;
+  modal(pending?'批量补全正在进行':'批量补全 · 核对结果', '<p class="modal-description">'+(pending?'任务在后台继续，可收起窗口后浏览队列。':'候选结果已保留。勾选采用后只生成草稿，点击写入才会修改文件。')+'</p><div class="inline-status" id="batch-progress" role="status" aria-live="polite"></div><div class="progress"><div id="batch-progress-bar"></div></div>'+batchToolbarHtml()+'<div id="batch-results"></div>',pending?'<button class="button secondary" data-modal-action="background-task">后台继续</button><button class="button secondary" data-modal-action="cancel-search">停止任务</button>':'','BATCH MATCH / REVIEW FIRST');
+  if(pending){$('#batch-toolbar').hidden=true;renderBackgroundTask();if(backgroundTask)$('#batch-progress').textContent='正在处理 '+backgroundTask.done+' / '+backgroundTask.total;}
+  else finishBatchView();
 }
 async function stageBatch() {
   const session=batchSession;if(!session)return;
   // Freeze the reviewed candidate objects and policy before asynchronous enrichment.
   const targets=session.items.filter(i=>i.checked&&!i.staged&&i.candidates[i.choice]).map(i=>({item:i,candidate:{...i.candidates[i.choice]}}));
   if(!targets.length)return;
-  await run(async()=>{
-    session.canceled=false;
+  await runBackground('stage',targets.length,async operationId=>{
+    session.canceled=false;session.pending='stage';
     const accepted=structuredClone(session.options);let success=0;const warnings=[];
-    $('#modal-footer').innerHTML='<button class="button secondary" id="stop-stage">停止获取，保留已有草稿</button>';
+    $('#modal-footer').innerHTML='<button class="button secondary" data-modal-action="background-task">后台继续</button><button class="button secondary" id="stop-stage">停止获取，保留已有草稿</button>';
     $('#stop-stage').onclick=()=>{session.canceled=true;api('cancel-search').catch(()=>{});};
     $('#batch-toolbar').hidden=true;
     $$('[data-batch-check], [data-batch-choice], [data-batch-retry]').forEach(e=>e.disabled=true);
     const payload=targets.map(({item,candidate})=>({path:item.path,candidate,local:localMeta(item.path)}));
-    const response=await api('batch-stage',payload,accepted).catch(error=>({results:[],errors:payload.map(item=>({path:item.path,message:error.message})),canceled:session.canceled}));
+    const response=await api('batch-stage',payload,{...accepted,operationId}).catch(error=>({results:[],errors:payload.map(item=>({path:item.path,message:error.message})),canceled:session.canceled}));
     const targetMap=new Map(targets.map(({item})=>[item.path,item]));
     for(const result of response.results||[]){
       const item=targetMap.get(result.path);if(!item)continue;
       // Server returns only allowed patches; recheck against edits made during the request.
       const planned=syncPatch(item.path,result.tags||{},accepted);
       const image=planned.useCover&&hasValue(result.cover)?result.cover:undefined;
-      patch([item.path],planned.tags,image);item.staged=true;item.checked=false;success++;
+      patch([item.path],planned.tags,image,false);item.staged=true;item.checked=false;success++;
       if(result.errors?.length){item.errors.push(...result.errors);warnings.push(...result.errors.map(error=>({path:item.path,message:error.message||error.error})));}
     }
     for(const error of response.errors||[]){const item=targetMap.get(error.path);if(item)item.error=error.message||error.error;warnings.push(error);}
-    session.canceled=session.canceled||response.canceled;
-    render();$('#batch-toolbar').hidden=false;
-    $('#batch-progress').textContent=`${session.canceled?'已停止，已有草稿保留':'获取完成'} · 本次 ${success} 首已加入草稿${warnings.length?` · ${warnings.length} 条来源提示，展开各项查看`:''}。审核后点击主界面的写入。`;
-    $('#modal-footer').innerHTML='<button class="button secondary" data-modal-action="close">完成审核</button><button class="button primary" id="apply-batch">采用勾选项 → 草稿</button>';
-    $('#apply-batch').onclick=()=>stageBatch();renderBatchRows();status(`本次已为 ${success} 首生成草稿，尚未写入。`);
-  },'正在获取封面与歌词并生成草稿…');
+    session.canceled=session.canceled||response.canceled;session.pending=false;
+    session.message=(session.canceled?'已停止，已有草稿保留':'获取完成')+' · 本次 '+success+' 首已加入草稿'+(warnings.length?' · '+warnings.length+' 条来源提示':'')+'。审核后点击主界面的写入。';
+    render();
+    if($('#batch-results') && $('#modal').open) finishBatchView();
+    else toast(session.message,'',{label:'查看结果',run:showBatchResults});
+    status('本次已为 '+success+' 首生成草稿，尚未写入。');
+  });
   updateBatchSelection();
 }
-window.music.onProgress(({ done, total }) => {
-  if ($("#batch-progress"))
-    $("#batch-progress").textContent = `正在匹配 ${done} / ${total}`;
-  if ($("#batch-progress-bar"))
-    $("#batch-progress-bar").style.width = (done / total) * 100 + "%";
-});
+
 async function showHistory() {
   const items = await api("history");
   modal(
     "写入与恢复历史",
-    `<p class="modal-description">每次写入和重命名都会备份。恢复也会备份当前版本；外部改动的文件会要求先重新读取。</p>${items.length ? items.map((item) => `<div class="history-item"><span>${icon("history")}</span><div class="history-copy"><strong>${esc(basename(item.originalPath || item.path))}</strong><p>${esc(new Date(item.createdAt || item.time || Date.now()).toLocaleString("zh-CN"))} · ${esc({ write: "标签写入", rename: "文件重命名", restore: "恢复" }[item.action] || item.action)} · ${esc(item.status)}</p></div><button class="button secondary" data-restore="${esc(item.id)}" ${!["complete", "committed"].includes(item.status) || item.restoredAt ? "disabled" : ""}>${item.restoredAt ? "已恢复" : "恢复此备份"}</button></div>`).join("") : '<div class="inline-status">还没有写入记录。原文件的首次修改将在这里留下备份。</div>'}`,
+    `<p class="modal-description">备份开启时，已有标签的文件在写入、清空和重命名前会备份；空标签文件跳过备份。恢复仍会备份当前版本；外部改动的文件需先重新读取。</p>${items.length ? items.map((item) => `<div class="history-item"><span>${icon("history")}</span><div class="history-copy"><strong>${esc(basename(item.originalPath || item.path))}</strong><p>${esc(new Date(item.createdAt || item.time || Date.now()).toLocaleString("zh-CN"))} · ${esc({ write: "标签写入", rename: "文件重命名", restore: "恢复", clear: "清空全部标签" }[item.action] || item.action)} · ${esc(item.status)}</p></div><button class="button secondary" data-restore="${esc(item.id)}" ${!["complete", "committed"].includes(item.status) || item.restoredAt ? "disabled" : ""}>${item.restoredAt ? "已恢复" : "恢复此备份"}</button></div>`).join("") : '<div class="inline-status">还没有写入记录。开启备份后，已有标签文件的修改记录会显示在这里。</div>'}`,
     `<button class="button secondary" data-modal-action="open-data">打开备份目录</button><button class="button primary" data-modal-action="close">完成</button>`,
     "HISTORY / AUTOMATIC BACKUPS",
   );
@@ -895,7 +995,7 @@ function renderTools() {
       .filter(([k]) => k !== "lyrics")
       .map(
         ([k, v]) =>
-          `<label class="field"><span><label><input type="checkbox" data-tool-field="${k}"> ${v}</label></span><input data-tool-value="${k}" placeholder="勾选后应用；留空将清除此字段"></label>`,
+          `<div class="field"><label class="tool-field-toggle"><input type="checkbox" data-tool-field="${k}"><span>${v}</span></label><input data-tool-value="${k}" aria-label="${v}" placeholder="勾选后应用；留空将清除此字段"></div>`,
       )
       .join("")}</div>`;
   if (toolTab === "rename" || toolTab === "filename")
@@ -1073,7 +1173,7 @@ async function renameJobs(jobs, pattern) {
 function showSettings() {
   modal(
     "偏好设置",
-    `<p class="modal-description">联网仅发送歌曲检索关键词。文件内容、音频和本地路径不上传。</p>${providerOptions()}${policyOptionsHtml()}<div class="tool-form"><label class="field"><span>批量草稿相似度门槛（70–99%）</span><input type="number" id="setting-threshold" min="70" max="99" value="${settings.threshold}"></label><label class="field"><span>iTunes 首选地区</span><select id="setting-country">${[
+    `<p class="modal-description">联网仅发送歌曲检索关键词。文件内容、音频和本地路径不上传。</p><label class="backup-setting"><input id="setting-backup" type="checkbox" ${settings.backupEnabled ? 'checked' : ''}><span><strong>自动备份原文件</strong><small>开启后，已有标签或封面的文件修改前会备份；空标签文件自动跳过。关闭后不再创建新备份，已有备份保留。</small></span></label>${providerOptions()}${policyOptionsHtml()}<div class="tool-form"><label class="field"><span>批量草稿相似度门槛（70–99%）</span><input type="number" id="setting-threshold" min="70" max="99" value="${settings.threshold}"></label><label class="field"><span>iTunes 首选地区</span><select id="setting-country">${[
       ["CN", "中国大陆"],
       ["JP", "日本"],
       ["US", "美国"],
@@ -1088,10 +1188,15 @@ function showSettings() {
     `<button class="button secondary" data-modal-action="close">取消</button><button class="button primary" id="save-settings">保存设置</button>`,
   );
   bindPolicyControls(null, false);
-  $("#save-settings").onclick = () => {
-    const options = completionOptions();
+  $("#save-settings").onclick = async () => {
+    const button = $('#save-settings'), options = completionOptions();
+    button.disabled = true;
+    let saved;
+    try { saved = await api('preferences-set', { backupEnabled: $('#setting-backup').checked }); }
+    catch (error) { toast(error.message, 'error'); button.disabled = false; return; }
     settings = {
       ...settings,
+      backupEnabled: saved.backupEnabled,
       sources: options.sources,
       fields: options.fields,
       overwriteFields: $$('[data-policy-overwrite]:checked').map((el) => el.dataset.policyOverwrite),
@@ -1102,6 +1207,7 @@ function showSettings() {
       country: $("#setting-country").value,
     };
     persistSettings();
+    updateBackupHint();
     $("#modal").close();
     toast("偏好设置已保存");
   };
@@ -1109,7 +1215,7 @@ function showSettings() {
 function help() {
   modal(
     "开始整理你的音乐",
-    `<ol class="help-list"><li>添加音频、导入文件夹，或直接把文件拖到窗口中。</li><li>单击封面，在右侧浮动卡片预览并编辑详细信息。</li><li>点击“补全信息”，搜索候选，勾选标签、封面与歌词后加入草稿。</li><li>使用 <kbd>Ctrl</kbd> 多选、<kbd>Shift</kbd> 连选，再执行批量补全或批量工具。</li><li>点击写入，程序先备份再保存。批量完成后全部封面统一刷新。</li><li>移除或清空队列不会删除音频；提示中的“撤回”可恢复队列。工作区与草稿会在本地暂存。</li></ol><p class="modal-description"><kbd>Ctrl + O</kbd> 添加音频 · <kbd>Ctrl + A</kbd> 全选当前视图 · <kbd>Ctrl + S</kbd> 写入所选草稿 · <kbd>Delete</kbd> 从队列移除所选</p><div class="inline-status">支持标签、主封面、内嵌歌词、重命名、文件名提取、查找替换、歌词整理、翻译排版、繁简转换与备份恢复。可调整封面分辨率并提取封面和歌词。部分原版旧站点来源、多封面分类管理与旁置文件同步改名尚未迁入。</div>`,
+    `<ol class="help-list"><li>添加音频、导入文件夹，或直接把文件拖到窗口中。</li><li>单击封面，在右侧详情栏预览并编辑详细信息。</li><li>点击“补全信息”，搜索候选，勾选标签、封面与歌词后加入草稿。</li><li>使用 <kbd>Ctrl</kbd> 多选、<kbd>Shift</kbd> 连选，再执行批量补全或批量工具。</li><li>点击写入保存草稿。备份开启时，已有标签的文件修改前会自动备份；空标签文件跳过备份。</li><li>移除或清空队列不会删除音频；提示中的“撤回”可恢复队列。工作区与草稿会在本地暂存。</li></ol><p class="modal-description"><kbd>Ctrl + O</kbd> 添加音频 · <kbd>Ctrl + A</kbd> 全选当前视图 · <kbd>Ctrl + S</kbd> 写入所选草稿 · <kbd>Delete</kbd> 从队列移除所选</p><div class="inline-status">支持标签、主封面、内嵌歌词、重命名、文件名提取、查找替换、歌词整理、翻译排版、繁简转换与备份恢复。可调整封面分辨率并提取封面和歌词。部分原版旧站点来源、多封面分类管理与旁置文件同步改名尚未迁入。</div>`,
     `<button class="button primary" data-modal-action="close">开始使用</button>`,
   );
 }
@@ -1128,23 +1234,22 @@ async function handleAction(action) {
     );
   if (action === "remove") return removeQueue(false);
   if (action === "clear") return removeQueue(true);
-  if (action === "refresh")
-    return run(() => refreshAll(), "正在重新读取全部音频…");
+  if (action === "refresh") return runBackground("refresh",files.length,id => refreshAll(false,id));
+  if (action === "task-stop") return stopBackgroundTask();
+  if (action === "task-view") return showBatchResults();
   if (action === "save-all") return writeFiles(Object.keys(drafts));
   if (action === "batch-match") return batchMatch();
+  if (action === "extract-lyrics") return window.MusicLyrics.open('auto');
   if (action === "tools") return tools();
   if (action === "history") return showHistory();
   if (action === "settings") return showSettings();
   if (action === "help") return help();
   if (action === "theme") {
-    const theme =
-      document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("theme", theme);
+    window.MusicTheme.toggle({ origin: document.querySelector('[data-action="theme"]') });
   }
 }
 function coverManager() {
-  const paths = [...selected];
+  const paths = previewTargets();
   let image = cover(active);
   modal(
     `封面管理 · ${paths.length} 首`,
@@ -1202,24 +1307,26 @@ function coverManager() {
 async function handlePreview(action) {
   if (action === "close") {
     selected.clear();
-    active = null;
+    active = files[0]?.path || null;
     render();
     return;
   }
-  if (action === "save") return writeFiles([...selected]);
+  if (action === "clear-all-tags") return clearAllTags();
+  if (action === "save") return writeFiles(previewTargets());
   if (action === "match") return openMatch(active);
   if (action === "cover") return coverManager();
   if (action === "import-lyrics") {
     const text = await api("choose-lyrics");
     if (text !== null) {
-      patch([...selected], { lyrics: text });
+      patch(previewTargets(), { lyrics: text });
       renderPreview();
     }
     return;
   }
+  if (action === "extract-lyrics") return window.MusicLyrics.open(selected.size > 1 ? 'batch' : 'single');
   if (action === "lyrics-tools") return tools("lyrics");
   if (action === "discard") {
-    for (const p of selected) delete drafts[p];
+    for (const p of previewTargets()) delete drafts[p];
     persist();
     render();
     return;
@@ -1303,6 +1410,9 @@ document.addEventListener("click", async (e) => {
     const modalAction = e.target.closest("[data-modal-action]")?.dataset
       .modalAction;
     if (modalAction === "close") $("#modal").close();
+    if (modalAction === 'background-task') {
+      $('#modal').dataset.backgroundTask='true';$('#modal').close();renderBackgroundTask();
+    }
     if (modalAction === "cancel-search") {
       await api("cancel-search");
       toast("已请求停止，已完成的候选会保留");
@@ -1316,12 +1426,12 @@ document.addEventListener("click", async (e) => {
 document.addEventListener("input", (e) => {
   if (e.target.matches("[data-tag]")) {
     const key = e.target.dataset.tag;
-    patch([...selected], { [key]: e.target.value });
+    patch(previewTargets(), { [key]: e.target.value });
     e.target.classList.add("changed");
     const save = $('[data-preview-action="save"]');
     if (save) {
       save.textContent = `写入${selected.size > 1 ? selected.size + " 首" : "此音频"}的修改`;
-      save.disabled = busy || ![...selected].some((p) => drafts[p]);
+      save.disabled = busy || !!backgroundTask || !previewTargets().some((p) => drafts[p]);
     }
   }
 });
@@ -1357,8 +1467,11 @@ $("#load-more").onclick = () => {
 };
 $("#modal-close").onclick = () => $("#modal").close();
 $("#modal").addEventListener("close", () => {
-  if (batchSession) batchSession.canceled = true;
-  api("cancel-search").catch(() => {});
+  const dialog=$('#modal');
+  if(dialog.open)return;
+  if(dialog.dataset.backgroundTask==='true'){delete dialog.dataset.backgroundTask;return;}
+  if($('#batch-results') && batchSession?.pending){batchSession.canceled=true;api('cancel-search').catch(()=>{});}
+  else if(!backgroundTask)api('cancel-search').catch(()=>{});
 });
 $("#player").onended = () => {
   playing = null;
@@ -1427,12 +1540,22 @@ document.addEventListener("drop", (e) => {
       "正在导入拖入的音频…",
     );
 });
+const lyricRecord = p => p && current(p) ? { ...current(p), tags: tags(p) } : null;
+window.MusicLyrics.configure({ api, modal, toast, status, icon, esc,
+  getSelected: () => [...selected].map(lyricRecord).filter(Boolean),
+  getActive: () => lyricRecord(active), getFiles: () => files.map(f => lyricRecord(f.path)),
+  onBusy: value => { busy = value; updateButtons(); },
+  subscribeProgress: callback => window.music.onLyricProgress(callback),
+});
 async function boot() {
-  document.documentElement.dataset.theme =
-    localStorage.getItem("theme") || "light";
+  window.MusicTheme.apply(localStorage.getItem("theme") || "light", { animate: false });
   hydrate();
   render();
   try {
+    const info = await api("get-info");
+    $(".version").innerHTML = `${info.portable ? 'PORTABLE EDITION' : 'INSTALLED EDITION'} <span>v${esc(info.version)}</span>`;
+    const preferences = await api("preferences-get");
+    settings.backupEnabled = preferences.backupEnabled; updateBackupHint(); persistSettings();
     const saved = await api("session-load");
     if (saved?.paths?.length) {
       await run(async () => {
@@ -1443,6 +1566,7 @@ async function boot() {
           Object.entries(saved.drafts || {}).filter(([p]) => valid.has(p)),
         );
         done = new Set((saved.done || []).filter((p) => valid.has(p)));
+        active = files[0]?.path || null; selected = active ? new Set([active]) : new Set();
         render();
         status(
           `已恢复工作区 · ${files.length} 首音频 · ${Object.keys(drafts).length} 份草稿`,

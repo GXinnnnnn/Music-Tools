@@ -7,11 +7,21 @@
   --input: rgba(255, 255, 255, 0.76);
   --text: #303143;
   --soft: #606078;
-  --muted: #707187;
+  --muted: #65677d;
   --line: rgba(66, 65, 91, 0.11);
-  --accent: #dd7297;
-  --accent-text: #a63763;
-  --accent-soft: #f5e0e9;
+  /* Saturated sakura identity; text and filled controls use separate contrast pairs. */
+  --accent: #ff5da8;
+  --accent-hover: #ff78b7;
+  --on-accent: #361124;
+  --accent-text: #b52669;
+  --accent-soft: #fbd8e9;
+  --accent-shadow: rgba(224, 43, 123, 0.2);
+  --accent-shadow-hover: rgba(224, 43, 123, 0.3);
+  --art-pink: #ff7eb6;
+  --art-violet: #c4a0ed;
+  --art-blue: #80cbed;
+  --danger-text: #ad214c;
+  --panel-edge: rgba(255, 255, 255, 0.5);
   --success: #32785c;
   --shadow: 0 16px 45px rgba(56, 47, 78, 0.09);
   --radius: 18px;
@@ -30,9 +40,18 @@
   --soft: #c4bbd0;
   --muted: #b0a9be;
   --line: rgba(218, 209, 232, 0.13);
-  --accent: #e18bab;
-  --accent-text: #f6a8c5;
-  --accent-soft: #503448;
+  --accent: #ff7eb6;
+  --accent-hover: #ff98c5;
+  --on-accent: #361124;
+  --accent-text: #ff9ac9;
+  --accent-soft: #503044;
+  --accent-shadow: rgba(255, 93, 168, 0.16);
+  --accent-shadow-hover: rgba(255, 93, 168, 0.26);
+  --art-pink: #ff7eb6;
+  --art-violet: #a78bdb;
+  --art-blue: #80cbed;
+  --danger-text: #ff91b1;
+  --panel-edge: rgba(218, 209, 232, 0.14);
   --success: #83ceab;
   --shadow: 0 16px 45px rgba(0, 0, 0, 0.2);
 }
@@ -105,6 +124,10 @@ input[type="checkbox"] {
   accent-color: var(--accent-text);
   width: 15px;
   height: 15px;
+  flex: 0 0 15px;
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
   cursor: pointer;
 }
 input[type="range"] {
@@ -267,6 +290,21 @@ button[hidden],
 }
 .local-badge > span {
   color: var(--accent-text);
+  flex: 0 0 19px;
+  align-self: center;
+}
+.local-badge > div,
+.local-badge .local-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  text-align: left;
+}
+.local-badge strong,
+.local-badge small {
+  white-space: nowrap;
+  line-height: 1.5;
 }
 .local-badge strong {
   font-size: 11px;
@@ -280,12 +318,20 @@ button[hidden],
   margin-top: 5px;
 }
 .sidebar-bottom .text-button {
+  max-width: 100%;
+  justify-content: flex-start;
   padding: 8px 2px;
   font-size: 10px;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
 }
+.sidebar-bottom .text-button > [data-icon],
 .sidebar-bottom .text-button svg {
   width: 14px;
   height: 14px;
+  flex: 0 0 14px;
+  overflow: visible;
 }
 .version {
   border-top: 1px solid var(--line);
@@ -298,7 +344,7 @@ button[hidden],
   justify-content: space-between;
 }
 .main-area {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -358,12 +404,12 @@ h1 .title-dot {
 }
 .primary {
   background: var(--accent);
-  color: #35202d;
-  box-shadow: 0 3px 10px #cc6d9320;
+  color: var(--on-accent);
+  box-shadow: 0 3px 10px var(--accent-shadow);
 }
 .primary:hover:not(:disabled) {
-  background: #e88aab;
-  box-shadow: 0 4px 13px #cc6d9340;
+  background: var(--accent-hover);
+  box-shadow: 0 4px 13px var(--accent-shadow-hover);
 }
 .secondary {
   background: var(--surface);
@@ -429,7 +475,7 @@ h1 .title-dot {
 }
 .library-surface {
   background: var(--surface);
-  border: 1px solid rgba(255, 255, 255, 0.42);
+  border: 1px solid var(--panel-edge);
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
@@ -551,7 +597,7 @@ input::placeholder {
   color: var(--soft);
 }
 .danger-subtle:hover {
-  color: #a92f50;
+  color: var(--danger-text);
 }
 .library-body {
   flex: 1;
@@ -580,7 +626,7 @@ input::placeholder {
   height: 144px;
   border-radius: 21px;
   transform: rotate(-7deg);
-  background: linear-gradient(140deg, #eabed6, #c3bee3 55%, #aac6de);
+  background: linear-gradient(140deg, var(--art-pink), var(--art-violet) 55%, var(--art-blue));
   box-shadow:
     0 14px 28px #9b84b333,
     inset 0 0 0 1px #ffffff66;
@@ -871,13 +917,89 @@ input::placeholder {
 .save-all {
   min-width: 155px;
 }
+/* Background work stays in the main flow, leaving the queue and preview usable. */
+.background-task {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  gap: 10px 12px;
+  min-width: 0;
+  margin-top: 12px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+.background-task-copy {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.background-task-copy strong {
+  display: block;
+  font-weight: 600;
+}
+.background-task-copy p,
+.background-task-copy small {
+  display: block;
+  margin: 2px 0 0;
+  color: var(--soft);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.background-task progress {
+  display: block;
+  flex: 1 1 100px;
+  width: 160px;
+  max-width: 180px;
+  height: 6px;
+  border: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  accent-color: var(--accent-text);
+  background: var(--bg);
+}
+.background-task progress::-webkit-progress-bar {
+  border-radius: 6px;
+  background: var(--bg);
+}
+.background-task progress::-webkit-progress-value {
+  border-radius: 6px;
+  background: var(--accent-text);
+}
+.background-task .task-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin-left: auto;
+}
+.background-task .task-actions .button,
+.background-task .task-actions .text-button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 10px;
+}
+@media (max-width: 1050px) {
+  .background-task progress {
+    order: 3;
+    flex-basis: 100%;
+    width: 100%;
+    max-width: none;
+  }
+}
 .preview-card {
   width: 333px;
   margin: 30px 24px 31px 0;
   flex-shrink: 0;
   border-radius: 23px;
   background: var(--surface);
-  border: 1px solid #ffffff70;
+  border: 1px solid var(--panel-edge);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
@@ -911,9 +1033,52 @@ input::placeholder {
   height: 25px;
 }
 .preview-content {
+  flex: 1 1 0;
   overflow: auto;
   padding: 0 20px 16px;
   min-height: 0;
+  scrollbar-gutter: stable;
+}
+.preview-content:has(.preview-empty) {
+  display: flex;
+  flex-direction: column;
+}
+.preview-empty {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 18px;
+  color: var(--soft);
+  text-align: center;
+  line-height: 1.8;
+}
+.preview-empty > svg,
+.preview-empty > [data-icon] {
+  width: 42px;
+  height: 42px;
+  color: var(--accent-text);
+}
+.preview-empty > [data-icon] svg {
+  width: 100%;
+  height: 100%;
+}
+.preview-empty h2,
+.preview-empty h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.preview-empty p {
+  margin: 0;
+  max-width: 26ch;
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
 .preview-art {
   position: relative;
@@ -1039,7 +1204,7 @@ input::placeholder {
   align-items: center;
   justify-content: space-between;
 }
-.field input,
+.field input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .field textarea,
 .field select,
 .form-input {
@@ -1051,6 +1216,25 @@ input::placeholder {
   padding: 9px 10px;
   font-size: 11px;
   outline-offset: 1px;
+}
+.field > span:has(input[type="checkbox"]),
+.field > label:has(input[type="checkbox"]),
+.field > span > label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 22px;
+  cursor: pointer;
+}
+.field input[type="checkbox"],
+.field input[type="radio"] {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  margin: 0;
+  padding: 0;
+  align-self: center;
 }
 .field input.changed {
   border-color: var(--accent);
@@ -1080,17 +1264,91 @@ input::placeholder {
 .preview-footer .button {
   width: 100%;
 }
-.preview-footer-line {
+.preview-footer-line,
+.preview-footer-actions {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   margin-top: 8px;
   font-size: 9px;
+  line-height: 1.6;
   color: var(--muted);
 }
 .preview-footer-line button {
-  font-size: 9px;
+  font-size: inherit;
   padding: 0;
   color: var(--soft);
+}
+.preview-footer-actions {
+  min-height: 14.4px;
+}
+.preview-footer-links {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 10px;
+  min-width: 0;
+}
+.clear-all-tags-link,
+.discard-draft-link,
+.backup-hint {
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: normal;
+}
+.clear-all-tags-link,
+.discard-draft-link {
+  display: inline;
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--soft);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.clear-all-tags-link:hover:not(:disabled),
+.discard-draft-link:hover:not(:disabled) {
+  background: transparent;
+  color: var(--danger-text);
+}
+.clear-all-tags-link:disabled,
+.discard-draft-link:disabled {
+  color: var(--muted);
+  opacity: 1;
+}
+.backup-hint {
+  margin: 0 0 0 auto;
+  color: var(--muted);
+}
+.backup-hint[hidden] {
+  display: none !important;
+}
+.backup-setting {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 36px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--soft);
+  cursor: pointer;
+}
+.backup-setting input[type="checkbox"] {
+  flex: 0 0 15px;
+  margin: 0;
+}
+.backup-setting > span {
+  min-width: 0;
 }
 .file-details {
   font-size: 11px;
@@ -1282,6 +1540,19 @@ dialog {
   max-width: 90vw;
   max-height: 85dvh;
   box-shadow: 0 30px 100px #17131e30;
+}
+/* Ordinary operation dialogs keep their windowed reading size on large displays. */
+#modal:not(.lyric-dialog) {
+  max-width: min(880px, calc(100vw - 40px));
+  max-height: min(85dvh, 760px);
+}
+#modal:not(.lyric-dialog) #modal-body {
+  max-height: min(58dvh, 560px);
+}
+/* Candidate comparison needs room for its per-track evidence and field table. */
+#modal:not(.lyric-dialog):has(#batch-results) {
+  width: min(1040px, calc(100vw - 64px));
+  max-width: min(1040px, calc(100vw - 40px));
 }
 dialog::backdrop {
   background: #24213565;
@@ -1518,7 +1789,8 @@ dialog::backdrop {
 }
 .check-grid {
   display: flex;
-  gap: 14px;
+  align-items: center;
+  gap: 10px 14px;
   flex-wrap: wrap;
   font-size: 11px;
   padding: 10px 0;
@@ -1527,7 +1799,9 @@ dialog::backdrop {
 .check-grid label {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  min-height: 28px;
+  cursor: pointer;
 }
 .history-item {
   display: flex;
@@ -1597,7 +1871,7 @@ dialog::backdrop {
   transition: width 0.2s;
 }
 .error-text {
-  color: #a93658;
+  color: var(--danger-text);
 }
 .busy-indicator {
   display: inline-block;
@@ -1703,14 +1977,6 @@ dialog::backdrop {
     gap: 14px;
   }
   .import-actions {
-    position: absolute;
-    right: 25px;
-    top: 88px;
-  }
-  .workspace:has(.preview-card:not([hidden])) .page-heading {
-    padding-right: 0;
-  }
-  .workspace:has(.preview-card:not([hidden])) .import-actions {
     position: static;
   }
   .preview-card {
@@ -1776,6 +2042,23 @@ dialog::backdrop {
   }
   .workspace-label span {
     display: none;
+  }
+  .local-badge {
+    gap: 6px;
+    padding-inline: 0;
+  }
+  .local-badge > span,
+  .local-badge > span svg {
+    width: 16px;
+    height: 16px;
+    flex-basis: 16px;
+  }
+  .local-badge strong {
+    font-size: 9.5px;
+  }
+  .local-badge small {
+    font-size: 9px;
+    margin-top: 4px;
   }
   .main-area {
     padding: 22px 15px 10px;
@@ -1915,7 +2198,35 @@ dialog::backdrop {
 .batch-retry { display: flex; gap: 8px; margin-top: 12px; }
 .batch-retry input { flex: 1; min-width: 0; }
 .batch-row[data-state="staged"] { opacity: .7; }
+/* Only MusicTheme owns these root snapshots; other view transitions keep their styles. */
+html.music-theme-revealing::view-transition,
+html.music-theme-revealing::view-transition-group(root),
+html.music-theme-revealing::view-transition-image-pair(root) {
+  pointer-events: none;
+}
+html.music-theme-revealing::view-transition-group(root),
+html.music-theme-revealing::view-transition-old(root),
+html.music-theme-revealing::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html.music-theme-revealing::view-transition-old(root) { z-index: 1; }
+html.music-theme-revealing::view-transition-new(root) {
+  z-index: 2;
+  will-change: clip-path;
+}
+/* The browser captures final colors once; children never tween during the reveal. */
+html.music-theme-revealing *,
+html.music-theme-revealing *::before,
+html.music-theme-revealing *::after {
+  transition: none !important;
+}
 @media (prefers-reduced-motion: reduce) {
+  html.music-theme-revealing::view-transition-group(root),
+  html.music-theme-revealing::view-transition-old(root),
+  html.music-theme-revealing::view-transition-new(root) {
+    animation: none !important;
+  }
   *,
   *::before,
   *::after {

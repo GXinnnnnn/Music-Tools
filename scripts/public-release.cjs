@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const { isPublicDoc, generatedPath } = require('./package.cjs');
 const { ensurePython } = require('./bootstrap-python.cjs');
 const rootFiles = new Set(['.gitignore', 'README.md', 'THIRD-PARTY-NOTICES.md', 'LICENSE', 'CHANGELOG.md', 'package.json', 'package-lock.json', '启动 Music Tools.cmd']);
-const publicScripts = new Set(['bootstrap-python.cjs', 'bootstrap-tests.cjs', 'public-release.cjs', 'package.cjs', 'installer.cjs', 'installer.nsh', 'installer-check.cjs', 'package-check.cjs', 'release-check.cjs', 'render-icon.cjs', 'screenshots.cjs', 'create-demo.py', 'engine-fixtures.py', 'providers-live-check.cjs', 'ui-batch-check.cjs', 'ui-check.cjs', 'ui-policy-check.cjs', 'ui-tools-check.cjs']);
+const publicScripts = new Set(['bootstrap-python.cjs', 'bootstrap-tests.cjs', 'public-release.cjs', 'package.cjs', 'installer.cjs', 'installer.nsh', 'installer-check.cjs', 'package-check.cjs', 'release-check.cjs', 'render-icon.cjs', 'screenshots.cjs', 'create-demo.py', 'engine-fixtures.py', 'providers-live-check.cjs', 'ui-batch-check.cjs', 'ui-check.cjs', 'ui-policy-check.cjs', 'ui-tools-check.cjs', 'ui-lyrics-check.cjs', 'lyrics-live-check.cjs', 'workspace-check.cjs', 'ui-lyric-result-check.cjs']);
 
 function safeRelative(relative) {
   if (typeof relative !== 'string' || relative.includes('\\') || /[:\x00-\x1f]/.test(relative) || relative.split('/').some(part => !part || part === '.' || part === '..' || /[. ]$/.test(part))) throw new Error('Unsafe archive entry: ' + relative);

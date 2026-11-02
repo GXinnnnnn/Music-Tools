@@ -36,7 +36,10 @@ const dataDir = process.env.MUSIC_TOOLS_DATA_DIR || (installed
 fs.mkdirSync(dataDir, { recursive: true });
 app.setPath("userData", path.join(dataDir, "profile"));
 audio.setDataDir(dataDir);
-let win, controller;
+const preferences = require('./core/preferences.cjs').createPreferences(dataDir);
+let win, controller, refreshController;
+const progress = data => { if (win && !win.isDestroyed()) win.webContents.send('task-progress', data); };
+
 const known = new Set();
 const records = new Map();
 function remember(record) {
@@ -62,13 +65,17 @@ async function stagedCandidate(item, options, signal, images) {
   if (effective.fields.includes('cover') && enriched.coverUrl) {
     try {
       if (!images.has(enriched.coverUrl)) {
-        const image = await require('./core/downloads.cjs').downloadCover(enriched.coverUrl, { signal });
-        if (require('electron').nativeImage.createFromDataURL(image).isEmpty()) throw new Error('下载的封面图片无法解码');
-        // This cache lives only for the current batch; failed/cancelled downloads are never cached.
+        const pending = require('./core/downloads.cjs').downloadCover(enriched.coverUrl, { signal }).then(image => {
+          if (require('electron').nativeImage.createFromDataURL(image).isEmpty()) throw new Error('下载的封面图片无法解码');
+          return image;
+        });
+        // Cache in-flight downloads too: parallel recordings can share the same album cover.
         if (images.size >= 32) images.delete(images.keys().next().value);
-        images.set(enriched.coverUrl, image);
+        images.set(enriched.coverUrl, pending);
       }
-      proposal.cover = images.get(enriched.coverUrl);
+      const pending = images.get(enriched.coverUrl);
+      try { proposal.cover = await pending; }
+      catch (error) { if (images.get(enriched.coverUrl) === pending) images.delete(enriched.coverUrl); throw error; }
     } catch (e) {
       if (signal.aborted) throw e;
       errors.push({ source: item.candidate.source, message: e.message });
@@ -142,20 +149,44 @@ handle("choose-import", async (folder) => {
   return r.canceled ? { files: [], errors: [] } : scan(r.filePaths);
 });
 handle("import-paths", scan);
-handle("refresh", async (paths) => {
-  const files = [],
-    errors = [];
-  for (const p of paths) {
-    try {
-      files.push(remember(await audio.read(allow(p))));
-    } catch (e) {
-      errors.push({ path: p, error: e.message });
+handle('preferences-get', () => preferences.get());
+handle('preferences-set', patch => preferences.set(patch));
+handle('refresh', async (paths, options = {}) => {
+  if (!Array.isArray(paths) || paths.length > 20000) throw new Error('文件数量无效');
+  if (refreshController) throw new Error('刷新任务正在进行中');
+  const task = refreshController = new AbortController();
+  const files = [], errors = [], valid = [], operationId = String(options.operationId || '').slice(0, 100);
+  try {
+    for (const p of [...new Set(paths)]) {
+      try { valid.push(allow(p)); } catch (e) { errors.push({ path: p, error: e.message }); }
     }
-  }
-  return { files, errors };
+    progress({ kind: 'refresh', operationId, done: 0, total: valid.length });
+    // Each group shares one Python process, rather than starting one for every recording.
+    for (let start = 0; start < valid.length && !task.signal.aborted; start += 16) {
+      const group = valid.slice(start, start + 16);
+      try {
+        const result = await audio.scan(group);
+        files.push(...result.files.map(remember)); errors.push(...result.errors);
+      } catch (error) { errors.push(...group.map(p => ({ path: p, error: error.message }))); }
+      progress({ kind: 'refresh', operationId, done: Math.min(start + group.length, valid.length), total: valid.length });
+    }
+    return { files, errors, canceled: task.signal.aborted };
+  } finally { if (refreshController === task) refreshController = null; }
+});
+handle('cancel-task', kind => {
+  if (kind === 'refresh') refreshController?.abort();
+  else if (kind === 'match' || kind === 'stage') controller?.abort();
+  else throw new Error('未知任务');
+  return true;
+});
+handle('clear-tags', async jobs => {
+  if (!Array.isArray(jobs) || jobs.length !== 1) throw new Error('请只选择一首音频以删除所有条目');
+  const result = await audio.clearBatch(jobsSafe(jobs), await preferences.get());
+  for (const item of result.results || []) if (item.record) remember(item.record);
+  return result;
 });
 handle("write", async (jobs, options) => {
-  const result = await audio.writeBatch(jobsSafe(jobs), options);
+  const result = await audio.writeBatch(jobsSafe(jobs), { ...(options || {}), ...await preferences.get() });
   for (const item of result.results || []) if (item.record) remember(item.record);
   return result;
 });
@@ -169,7 +200,7 @@ handle("rename-preview", (jobs, pattern) =>
   audio.renamePreview(jobsSafe(jobs), pattern),
 );
 handle("rename", async (jobs, pattern) => {
-  const r = await audio.renameBatch(jobsSafe(jobs), pattern);
+  const r = await audio.renameBatch(jobsSafe(jobs), pattern, await preferences.get());
   for (const item of r.results)
     if (item.record?.path) remember(item.record);
   return r;
@@ -196,11 +227,20 @@ handle("batch-stage", async (items, options = {}) => {
   if (!Array.isArray(items) || items.length > 20000) throw new Error('文件数量无效');
   controller?.abort(); controller = new AbortController();
   const signal = controller.signal, results = [], errors = [], images = new Map();
-  for (const item of items) {
-    if (signal.aborted) break;
-    try { results.push(await stagedCandidate(item, options, signal, images)); }
-    catch (e) { if (signal.aborted) break; errors.push({ path: item.path, error: e.message, message: e.message }); }
-  }
+  let next = 0, done = 0;
+  const operationId = String(options.operationId || '').slice(0, 100);
+  const worker = async () => {
+    while (next < items.length && !signal.aborted) {
+      const item = items[next++];
+      try { results.push(await stagedCandidate(item, options, signal, images)); }
+      catch (e) { if (signal.aborted) break; errors.push({ path: item.path, error: e.message, message: e.message }); }
+      const event = { kind: 'stage', operationId, done: ++done, total: items.length };
+      progress(event); win?.webContents.send('match-progress', event);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, items.length) }, worker));
+  const order = new Map(items.map((item, i) => [item.path, i]));
+  results.sort((a, b) => order.get(a.path) - order.get(b.path));
   return { results, errors, canceled: signal.aborted };
 });
 handle("cancel-search", () => {
@@ -231,13 +271,68 @@ handle("batch-match", async (items, options = {}) => {
         if (signal.aborted) break;
         errors.push({ path: item.path, error: e.message });
       }
-      win?.webContents.send('match-progress', { done: ++done, total: items.length });
+      const event = { kind: 'match', operationId: String(options.operationId || '').slice(0, 100), done: ++done, total: items.length };
+      progress(event); win?.webContents.send('match-progress', event);
     }
   };
   await Promise.all(Array.from({ length: Math.min(3, items.length) }, worker));
   const order = new Map(items.map((item, i) => [item.path, i]));
   results.sort((a, b) => order.get(a.path) - order.get(b.path));
   return { results, errors, canceled: signal.aborted };
+});
+// Lyrics are a separate job family so cancelling their dialog cannot cancel tag matching.
+let lyricController;
+const lyricDirectories = new Set(), lyricOutputs = new Set();
+const lyricService = () => require('./core/lyric-service.cjs');
+function beginLyrics() {
+  lyricController?.abort();
+  lyricController = new AbortController();
+  return lyricController.signal;
+}
+function lyricDirectory(directory) {
+  if (!directory) return undefined;
+  const resolved = path.resolve(directory);
+  if (!lyricDirectories.has(resolved)) throw new Error('请重新选择歌词导出文件夹');
+  return resolved;
+}
+handle('lyric-search', (query, options = {}) => lyricService().search(String(query || '').slice(0, 500), {
+  sources: options.sources, local: options.local, signal: beginLyrics(),
+}));
+handle('lyric-fetch', (candidate) => lyricService().fetchLyrics(candidate, { signal: beginLyrics() }));
+handle('lyric-preview', (data, options) => lyricService().preview(data, options));
+handle('lyric-filename', (job) => {
+  const audioPath = allow(job.audioPath), record = records.get(audioPath);
+  return lyricService().filenames({ audioPath, options: job.options,
+    metadata: lyricService().filenameMetadata(job.metadata || {}, record?.tags || {}) });
+});
+handle('lyric-directory', async () => {
+  const result = await dialog.showOpenDialog(win, { title: '选择歌词导出文件夹', properties: ['openDirectory', 'createDirectory'] });
+  if (result.canceled) return null;
+  const directory = await fsp.realpath(result.filePaths[0]);
+  lyricDirectories.add(directory);
+  return directory;
+});
+handle('lyric-export', async (job) => {
+  const audioPath = allow(job.audioPath), record = records.get(audioPath);
+  const saved = await lyricService().exportLyrics({ ...job, audioPath, directory: lyricDirectory(job.directory),
+    metadata: lyricService().filenameMetadata(job.metadata || {}, record?.tags || {}),
+    options: { ...job.options, duration: record?.duration || job.options?.duration } }, { signal: beginLyrics() });
+  for (const file of saved.files) lyricOutputs.add(file.path);
+  return saved;
+});
+handle('lyric-batch', async (items, options = {}) => {
+  const jobs = jobsSafe(items).map(item => ({ path: item.path, local: mergedLocal(item.path, item.local || {}) }));
+  const result = await lyricService().batch(jobs, { ...lyricService().conversionOptions(options), sources: options.sources,
+    directory: lyricDirectory(options.directory), signal: beginLyrics(),
+    onProgress: progress => { if (!win?.isDestroyed()) win?.webContents.send('lyric-progress', { ...progress, operationId: String(options.operationId || '').slice(0, 100) }); } });
+  for (const row of result.results) for (const file of row.outputs || (row.output ? [row.output] : [])) lyricOutputs.add(file);
+  return result;
+});
+handle('lyric-cancel', () => { lyricController?.abort(); return true; });
+handle('lyric-reveal', (p) => {
+  const resolved = path.resolve(p);
+  if (!lyricOutputs.has(resolved)) throw new Error('请先导出此歌词文件');
+  shell.showItemInFolder(resolved);
 });
 handle("choose-cover", async () => {
   const r = await dialog.showOpenDialog(win, {

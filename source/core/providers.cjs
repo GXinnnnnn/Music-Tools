@@ -559,7 +559,7 @@ async function enrich(candidate, options = {}) {
         else tags.errors.push({ source: 'netease', code: 'NOT_FOUND', message: 'NetEase has no lyrics for this song; trying LRCLIB.' });
       } catch (error) { aborted(options.signal); tags.errors.push(errorRecord('netease', error)); }
     }
-    if (!lyricData) {
+    if (!lyricData && options.lyricsFallback !== false) {
       if (!text(candidate.artist)) tags.errors.push({ source: 'lrclib', code: 'MISSING_METADATA', message: 'An artist name is required to match lyrics safely.' });
       else try { lyricData = await lrclib(candidate, options); }
       catch (error) { aborted(options.signal); tags.errors.push(errorRecord('lrclib', error)); }
