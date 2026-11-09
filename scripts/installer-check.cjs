@@ -72,6 +72,18 @@ function waitFor(predicate, timeout = 30000) {
   // Added files exercise the guarantee even inside a generated subtree. No recursive removal is used.
   const sentinels = [path.join(destination, 'user-audio.wav'), path.join(destination, 'data', 'portable-state.json'), path.join(destination, 'resources', 'user-added.flac'), path.join(appData, 'user-history.json')];
   for (const file of sentinels) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'preserve-me'); }
+  // The installed copy must carry the ownership inventory needed by optional compression.
+  const installedInventoryPath = path.join(destination, '.music-tools-generated.json');
+  const installedInventory = JSON.parse(fs.readFileSync(installedInventoryPath, 'utf8'));
+  assert.equal(installedInventory.version, manifest.version);
+  assert.ok(installedInventory.files.includes('节省磁盘空间.cmd'));
+  assert.ok(installedInventory.files.includes('resources/app/source/core/compact_program.py'));
+  const hashes = new Map(installedInventory.files.map(relative => [relative, crypto.createHash('sha256').update(fs.readFileSync(path.join(destination, relative))).digest('hex')]));
+  const compression = require('./compact-program.cjs').safecompact(destination, { json: true });
+  assert.equal(compression.status, 'ok');
+  assert.equal(compression.failed, 0);
+  for (const [relative, hash] of hashes) assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(destination, relative))).digest('hex'), hash);
+  for (const file of sentinels) assert.equal(fs.readFileSync(file, 'utf8'), 'preserve-me');
   // _?= prevents NSIS from spawning a detached temporary uninstaller and makes completion observable.
   run(path.join(destination, 'Uninstall.exe'), ['/S', '_?=' + destination]);
   await waitFor(() => !fs.existsSync(installedExe));
@@ -79,7 +91,7 @@ function waitFor(predicate, timeout = 30000) {
   assert.equal(fs.existsSync(path.join(destination, 'resources', 'installed-mode')), false);
   assert.equal(registryExists(uninstallKey), false);
   for (const shortcut of shortcuts) assert.equal(fs.existsSync(shortcut), false);
-  const result = { passed: true, version: manifest.version, installer, installerSHA256: crypto.createHash('sha256').update(fs.readFileSync(installer)).digest('hex'), base, destination, runtime, checks: ['silent per-user custom-directory install', 'populated unmarked directory rejected', 'installed marker created by NSIS', 'no portable data packaged', 'English and Simplified Chinese locales only', 'shortcuts and HKCU uninstall registration', 'Playwright packaged launch with restricted PATH', 'bundled Python demo audio metadata', 'offline Chinese conversion', 'silent enumerated-file uninstall', 'added root audio, resource audio, portable data and per-user data preserved'] };
+  const result = { passed: true, version: manifest.version, installer, installerSHA256: crypto.createHash('sha256').update(fs.readFileSync(installer)).digest('hex'), base, destination, runtime, compression, checks: ['silent per-user custom-directory install', 'populated unmarked directory rejected', 'installed marker created by NSIS', 'no portable data packaged', 'English and Simplified Chinese locales only', 'shortcuts and HKCU uninstall registration', 'Playwright packaged launch with restricted PATH', 'bundled Python demo audio metadata', 'offline Chinese conversion', 'installed inventory and optional compression preserve all program hashes and user sentinels', 'silent enumerated-file uninstall', 'added root audio, resource audio, portable data and per-user data preserved'] };
   fs.writeFileSync(path.join(root, 'artifacts', 'installer-check.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 })().catch(error => { console.error(error); process.exitCode = 1; });

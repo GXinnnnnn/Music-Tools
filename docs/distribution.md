@@ -1,16 +1,16 @@
 # 构建与发布
 
-Music Tools v1.0.0 面向 Windows x64。安装版、便携版均内置 Electron 40.10.6、Python 3.12.10、Mutagen 和离线繁简转换组件，使用者无需安装 Node.js 或 Python。源代码包面向开发者。
+Music Tools v1.0.1 面向 Windows x64。安装版、便携版均内置 Electron 40.10.6、Python 3.12.10、Mutagen 和离线繁简转换组件，使用者无需安装 Node.js 或 Python。源代码包面向开发者。
 
 ## 下载文件
 
 | 文件 | 用途 |
 | --- | --- |
-| `Music-Tools-1.0.0-Setup-x64.exe` | 当前用户安装，可选安装目录，提供快捷方式和卸载入口 |
-| `Music-Tools-1.0.0-Portable-x64.zip` | 解压后运行 `Music Tools/Music Tools.exe`，保留整个目录 |
-| `Music-Tools-1.0.0-Source.zip` | 项目源码、构建脚本与许可证，不包含运行库二进制 |
+| `Music-Tools-1.0.1-Setup-x64.exe` | 当前用户安装，可选安装目录，提供快捷方式和卸载入口 |
+| `Music-Tools-1.0.1-Portable-x64.zip` | 解压后运行 `Music Tools/Music Tools.exe`，保留整个目录 |
+| `Music-Tools-1.0.1-Source.zip` | 项目源码、构建脚本与许可证，不包含运行库二进制 |
 
-三个文件的 SHA-256 校验值见 GitHub 发行说明；本地归档同时生成 `SHA256SUMS.txt`。
+公开归档同时生成 `SHA256SUMS.txt`。当前版本为 1.0.1，可从 [GitHub Releases](https://github.com/GXinnnnnn/Music-Tools/releases/tag/v1.0.1) 下载；本地构建和归档不会自动发布。
 
 文件名版本由根目录的 `package.json` 决定。
 
@@ -26,7 +26,7 @@ npm start
 npm run package
 ```
 
-`npm ci` 按锁文件安装 Electron、rcedit、electron-builder 等开发依赖。首次构建还可能下载 NSIS 编译器，需要联网。构建输出位于 `release/`，构建记录位于 `artifacts/`。安装文件名为 `Music Tools Setup 1.0.0 x64.exe`。
+`npm ci` 按锁文件安装 Electron、rcedit、electron-builder 等开发依赖。首次构建还可能下载 NSIS 编译器，需要联网。构建输出位于 `release/`，构建记录位于 `artifacts/`。安装文件名为 `Music Tools Setup 1.0.1 x64.exe`。
 
 Python 引导脚本下载官方嵌入式运行库，完整校验后才解压：
 
@@ -44,6 +44,23 @@ node scripts/bootstrap-python.cjs --check
 
 可分别执行 `node scripts/package.cjs --portable-only` 或 `--installer-only`；后者要求已有同版本的便携构建清单。可通过 `MUSIC_TOOLS_MAKENSIS` 指定 NSIS 编译器，或 `MUSIC_TOOLS_BUILDER_MODULE` 指定已安装的 electron-builder 模块。`MUSIC_TOOLS_ELECTRON_DIST` 可指定相同版本的 Electron 目录，`ELECTRON_BUILDER_CACHE` 可指定编译器缓存。
 
+## 可选的程序文件磁盘压缩
+
+程序目录提供 `节省磁盘空间.cmd`。关闭应用后手动执行，使用 Windows 自带的 XPRESS8K 压缩；不在安装、启动或构建时自动执行。运行版自带 Python，使用者无需额外环境。Windows 10 / 11 的 NTFS 卷支持此操作；其他文件系统会报告跳过并保留普通程序文件。
+
+```powershell
+# 在安装版或便携版的程序目录执行
+& '.\节省磁盘空间.cmd'
+# 撤销压缩
+& '.\节省磁盘空间.cmd' --undo
+# 开发环境下获取结构化报告，必须明确指定运行版目录
+node scripts/compact-program.cjs --root 'C:\Music Tools\免安装版' --json
+```
+
+辅助程序先验证整份 `.music-tools-generated.json`，仅处理其枚举的程序文件；拒绝路径越界、重解析点、链接和数据目录。音乐、`data/`、备份、清单本身以及未列出的新增文件均不参与。压缩失败会列出文件，可关闭程序后重试或撤销；不需要管理员权限，不修改系统 CompactOS 设置。
+
+压缩保留文件逻辑内容，只减少 NTFS 存储占用。ZIP 和 NSIS 不保留此文件系统属性，解压或安装后需单独执行。下载体积与进程内存不会按同样比例缩小。更新替换程序文件后可再次执行。
+
 ## 验证
 
 基础回归使用临时生成的音频，不使用个人音乐。可选测试工具通过单独脚本下载，仅用于本地测试：
@@ -57,6 +74,8 @@ npm run test:ui:policy
 npm run test:ui:lyrics
 npm run test:ui:workspace
 npm run test:ui:lyric-results
+node scripts/ui-lyric-reference-check.cjs
+node scripts/ui-focus-check.cjs
 npm run test:release
 npm run test:installer
 ```
@@ -66,7 +85,7 @@ npm run test:installer
 安装测试在 `artifacts/installer-smoke/` 下的独立目录安装、启动、运行引擎、卸载，并用哨兵音频和数据检查保留行为。已有 Music Tools 安装或快捷方式注册时会拒绝测试，避免覆盖用户环境。可显式传入安装包：
 
 ```powershell
-node scripts/installer-check.cjs '.\release\Music Tools Setup 1.0.0 x64.exe'
+node scripts/installer-check.cjs '.\release\Music Tools Setup 1.0.1 x64.exe'
 ```
 
 ## 生成公开归档
@@ -92,9 +111,9 @@ node scripts/public-release.cjs --staging . --source-only
 核对下载文件：
 
 ```powershell
-Get-FileHash '.\Music-Tools-1.0.0-Source.zip' -Algorithm SHA256
-Get-FileHash '.\Music-Tools-1.0.0-Portable-x64.zip' -Algorithm SHA256
-Get-FileHash '.\Music-Tools-1.0.0-Setup-x64.exe' -Algorithm SHA256
+Get-FileHash '.\Music-Tools-1.0.1-Source.zip' -Algorithm SHA256
+Get-FileHash '.\Music-Tools-1.0.1-Portable-x64.zip' -Algorithm SHA256
+Get-FileHash '.\Music-Tools-1.0.1-Setup-x64.exe' -Algorithm SHA256
 Get-Content '.\SHA256SUMS.txt'
 ```
 

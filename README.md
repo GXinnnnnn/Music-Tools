@@ -4,9 +4,9 @@
 
 <p align="center"><strong>让每一首本地音乐，都有完整的归属。</strong></p>
 <p align="center">标签编辑 · 六来源补全 · 封面管理 · 双语歌词导出 · 批量整理</p>
-<p align="center">Windows x64 · v1.0.0 首次发布 · GPL-3.0-or-later</p>
+<p align="center">Windows x64 · v1.0.1 · GPL-3.0-or-later</p>
 
-<p align="center"><a href="https://github.com/GXinnnnnn/Music-Tools/releases/tag/v1.0.0">下载 1.0.0</a> · <a href="docs/lyrics.md">歌词使用说明</a> · <a href="docs/providers.md">在线来源说明</a> · <a href="docs/text-tools.md">文本工具说明</a> · <a href="https://github.com/GXinnnnnn/Music-Tools/issues">反馈问题</a></p>
+<p align="center"><a href="https://github.com/GXinnnnnn/Music-Tools/releases/tag/v1.0.1">下载 1.0.1</a> · <a href="docs/lyrics.md">歌词使用说明</a> · <a href="docs/providers.md">在线来源说明</a> · <a href="docs/text-tools.md">文本工具说明</a> · <a href="https://github.com/GXinnnnnn/Music-Tools/issues">反馈问题</a></p>
 
 Music Tools 是一款面向本地音乐收藏的 Windows 桌面整理工具。用大封面网格浏览音乐，在常驻详情栏编辑属性，从六个在线来源寻找封面与资料，核对候选后保存草稿，再统一写入。歌词工作台支持 QQ 音乐与网易云音乐，可预览、编辑原文和译文，并导出 SRT、LRC 或 TXT。
 
@@ -14,15 +14,25 @@ Music Tools 是一款面向本地音乐收藏的 Windows 桌面整理工具。�
 
 ## 下载与运行
 
-1.0.0 提供以下三个下载文件，运行版均自带所需环境，无需安装 Node.js 或 Python。
+当前版本为 **1.0.1**，提供安装包、便携 ZIP 与源码 ZIP，运行版自带所需环境，无需安装 Node.js 或 Python。
 
 | 下载 | 适合用途 |
 | --- | --- |
-| [Music-Tools-1.0.0-Setup-x64.exe](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.0/Music-Tools-1.0.0-Setup-x64.exe) | 安装版：可选择安装目录，提供快捷方式与卸载入口 |
-| [Music-Tools-1.0.0-Portable-x64.zip](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.0/Music-Tools-1.0.0-Portable-x64.zip) | 便携版：解压到可写位置，运行文件夹中的 `Music Tools.exe` |
-| [Music-Tools-1.0.0-Source.zip](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.0/Music-Tools-1.0.0-Source.zip) | 源码包：用于开发与自行构建 |
+| [Music-Tools-1.0.1-Setup-x64.exe](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.1/Music-Tools-1.0.1-Setup-x64.exe) | 安装版：可选择安装目录，提供快捷方式与卸载入口 |
+| [Music-Tools-1.0.1-Portable-x64.zip](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.1/Music-Tools-1.0.1-Portable-x64.zip) | 便携版：解压到可写位置，运行文件夹中的 `Music Tools.exe` |
+| [Music-Tools-1.0.1-Source.zip](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.1/Music-Tools-1.0.1-Source.zip) | 源码包：用于开发与自行构建 |
 
 便携版请保留**整个解压文件夹**，不要单独移动 EXE；配置、工作区和备份保存在程序旁的 `data/`。安装版将这些数据保存在当前用户的应用数据目录 `%APPDATA%\Music Tools`。完整文件备份需要相应的磁盘空间。
+
+## 节省程序占用的磁盘空间
+
+Windows 10 / 11 的 NTFS 磁盘可选择使用透明压缩。关闭 Music Tools 后，在程序目录双击 `节省磁盘空间.cmd`，以 XPRESS8K 压缩清单内的程序文件；程序仍通过原来的 EXE 启动。需要撤销时，在该目录的终端执行：
+
+```powershell
+& '.\节省磁盘空间.cmd' --undo
+```
+
+此步骤只处理生成清单列出的程序文件，不选择音乐、`data/`、备份或后来添加的文件。不支持的文件系统会跳过，普通运行不需要执行此步骤。压缩改变的是磁盘实际占用，文件内容及逻辑大小不变；ZIP 下载大小和内存用量不会按同样比例减少，启动表现取决于硬件与磁盘。
 
 ## 从一首歌开始
 
@@ -68,7 +78,11 @@ Music Tools 是一款面向本地音乐收藏的 Windows 桌面整理工具。�
 
 ## 歌词工作台
 
-从队列工具栏或详情栏进入，单曲使用候选校验，多选进入批量提取。歌词提取使用所选的 **QQ 音乐／网易云音乐**，无需账号或令牌。可修改标题和艺术家关键词，选择具体版本，分别编辑原文与译文，并检查**实际导出预览**、文件名与保存位置。
+从侧栏、队列工具栏或详情栏进入，**无需导入音频也能直接取词**。在“歌曲链接／ID”一行粘贴 **QQ 音乐／网易云音乐** 的电脑端、移动端或分享链接，或输入歌曲 ID，即可读取歌曲信息并获取歌词；纯数字 ID 需选择所属平台，也可按标题与艺术家搜索。无需账号或令牌。
+
+单曲使用候选校验，多选进入批量提取。可选择具体版本，分别编辑原文与译文，并检查**实际导出预览**、文件名与保存位置。未导入音频时先选择保存目录再导出。
+
+![无需导入音频：通过歌曲链接或 ID 提取歌词](docs/images/lyrics-reference.png)
 
 | 选项 | 支持内容 |
 | --- | --- |

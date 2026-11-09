@@ -87,13 +87,23 @@ button:disabled {
   opacity: 0.4;
   cursor: default;
 }
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--accent-text);
-  outline-offset: 3px;
+/* Keep the focus line inside control edges, including clipped scroll panels. */
+:focus-visible,
+.search-box:has(input:focus-visible) {
+  outline: 2px solid var(--focus-color, var(--accent-text));
+  outline-offset: -2px;
 }
+/* Preserve room for compact focus rings when controls scroll to panel edges. */
+:is(button, input, select, textarea, summary, [tabindex]) {
+  scroll-margin: 4px;
+}
+/* Native toggles and thin slider tracks need a compact, separate indicator. */
+input:is([type="checkbox"], [type="radio"], [type="range"]):focus-visible {
+  outline-offset: 1px;
+}
+/* Filled controls need contrast against their own surface. */
+.primary { --focus-color: var(--on-accent); }
+.audio-tile.selected .tile-checkbox { --focus-color: var(--solid); }
 button {
   transition:
     background 0.16s,
@@ -223,6 +233,9 @@ button[hidden],
 .sidebar {
   width: 198px;
   flex-shrink: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
   padding: 28px 14px 14px 18px;
   display: flex;
   flex-direction: column;
@@ -722,7 +735,6 @@ input::placeholder {
   min-width: 0;
   position: relative;
   cursor: pointer;
-  outline: none;
   transition:
     background 0.16s,
     border 0.16s;
@@ -733,10 +745,6 @@ input::placeholder {
 .audio-tile.selected {
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 65%, transparent);
-}
-.audio-tile:focus-visible {
-  outline: 2px solid var(--accent-text);
-  outline-offset: 2px;
 }
 .tile-cover {
   position: relative;
@@ -1215,7 +1223,6 @@ input::placeholder {
   border-radius: 8px;
   padding: 9px 10px;
   font-size: 11px;
-  outline-offset: 1px;
 }
 .field > span:has(input[type="checkbox"]),
 .field > label:has(input[type="checkbox"]),
@@ -1575,6 +1582,7 @@ dialog::backdrop {
   max-height: 58dvh;
   overflow: auto;
   padding: 2px 3px;
+  scroll-padding: 6px;
   scrollbar-gutter: stable;
 }
 #modal-footer {
@@ -1729,11 +1737,6 @@ dialog::backdrop {
 }
 .policy-table input:disabled {
   opacity: 0.45;
-}
-.policy-table input:focus-visible, .provider-picker input:focus-visible,
-.policy-overwrite-all input:focus-visible {
-  outline: 2px solid var(--accent-text);
-  outline-offset: 3px;
 }
 .provider-options {
   display: flex;

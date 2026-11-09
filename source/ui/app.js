@@ -134,7 +134,33 @@ let files = [],
   playing = null;
 let backgroundTask = null;
 const previewTargets = () => selected.size ? [...selected] : active && current(active) ? [active] : [];
-const current = (p) => files.find((f) => f.path === p);
+let indexedFiles = null;
+let filesByPath = new Map();
+function fileIndex() {
+  // Rebuild after an array replacement; individual mutations update the same index.
+  if (indexedFiles !== files) {
+    filesByPath = new Map(files.map(record => [record.path, record]));
+    indexedFiles = files;
+  }
+  return filesByPath;
+}
+function replaceFiles(records) {
+  files = records;
+  indexedFiles = null;
+  fileIndex();
+}
+function appendRecord(record) {
+  const index = fileIndex();
+  files.push(record);
+  index.set(record.path, record);
+}
+function replaceRecord(position, record) {
+  const index = fileIndex(), previous = files[position];
+  if (previous?.path !== record.path) index.delete(previous?.path);
+  files[position] = record;
+  index.set(record.path, record);
+}
+const current = (p) => fileIndex().get(p);
 function updateBackupHint() {
   const enabled = settings.backupEnabled;
   const title = document.querySelector('.local-badge strong'), note = document.querySelector('.local-badge small');
@@ -193,12 +219,10 @@ const cover = (p) =>
   drafts[p] && Object.hasOwn(drafts[p], "cover")
     ? drafts[p].cover
     : current(p)?.cover;
-const isMissing = (f) =>
-  !tags(f.path).title ||
-  !tags(f.path).artist ||
-  !tags(f.path).album ||
-  !cover(f.path) ||
-  !tags(f.path).lyrics;
+const isMissing = (f) => {
+  const values = tags(f.path);
+  return !values.title || !values.artist || !values.album || !cover(f.path) || !values.lyrics;
+};
 const duration = (n) =>
   n
     ? `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, "0")}`
@@ -265,15 +289,16 @@ function persist() {
 }
 function patch(paths, values, coverValue, renderNow = true) {
   for (const p of paths) {
-    if (!current(p)) continue;
+    const record = current(p);
+    if (!record) continue;
     const d = drafts[p] || { tags: {} };
     d.tags = { ...d.tags, ...values };
     if (coverValue !== undefined) d.cover = coverValue;
     for (const k of Object.keys(d.tags)) {
-      if (String(current(p).tags[k] || "") === String(d.tags[k] || ""))
+      if (String(record.tags[k] || "") === String(d.tags[k] || ""))
         delete d.tags[k];
     }
-    if (Object.hasOwn(d, "cover") && d.cover === current(p).cover)
+    if (Object.hasOwn(d, "cover") && d.cover === record.cover)
       delete d.cover;
     if (!Object.keys(d.tags).length && !Object.hasOwn(d, "cover"))
       delete drafts[p];
@@ -330,36 +355,58 @@ function renderCounts() {
   $("#library-status").innerHTML =
     `<span class="status-dot"></span>${files.length ? `${visible.length} 首音频 · ${files.filter((f) => cover(f.path)).length} 张封面` : "准备就绪"}`;
 }
+const tileCache = new Map();
 function renderGrid() {
   const list = visibleFiles();
+  const grid = $("#album-grid");
   $("#empty-state").hidden = files.length > 0;
-  $("#album-grid").hidden = !files.length;
+  grid.hidden = !files.length;
   $("#no-results").hidden = !files.length || list.length > 0;
   $("#load-more").hidden = list.length <= pageSize;
-  $("#album-grid").innerHTML = list
-    .slice(0, pageSize)
-    .map((f) => {
-      const t = tags(f.path),
-        p = f.path,
-        d = drafts[p];
-      const state = d
-        ? "待写入"
-        : done.has(p)
-          ? "已完成"
-          : isMissing(f)
-            ? "待补全"
-            : "信息完整";
-      return `<div class="audio-tile ${selected.has(p) ? "selected" : ""}" role="listitem" tabindex="0" data-path="${esc(p)}" aria-label="${esc(t.title || f.filename)}，${state}" aria-selected="${selected.has(p)}"><div class="tile-cover">${artwork(cover(p), (t.album || t.title || f.filename) + " 封面")}<button class="tile-checkbox" aria-label="${selected.has(p) ? "取消选择" : "选择"} ${esc(t.title || f.filename)}" data-select="${esc(p)}">${selected.has(p) ? icon("check") : ""}</button><span class="format-tag">${esc(f.format || "AUDIO")}</span></div><div class="tile-title" title="${esc(t.title || f.filename)}">${esc(t.title || f.filename)}</div><div class="tile-artist" title="${esc(t.artist || "未知艺术家")}">${esc(t.artist || "未知艺术家")} <span>· ${esc(t.album || "未填写专辑")}</span></div><div class="tile-meta"><span class="tile-status ${d ? "draft" : done.has(p) ? "done" : ""}">${icon(d ? "edit" : done.has(p) ? "check-circle" : "music")}${state}</span><span>${duration(f.duration)}</span></div></div>`;
-    })
-    .join("");
-  hydrate();
+  const shown = list.slice(0, pageSize), wanted = new Set(shown.map(f => f.path));
+  // Retain only displayed tiles, so removed files and large covers are released.
+  for (const [key, entry] of tileCache) {
+    if (!wanted.has(key)) { entry.node.remove(); tileCache.delete(key); }
+  }
+  let anchor = grid.firstElementChild;
+  for (const f of shown) {
+    const p = f.path, d = drafts[p], isDone = done.has(p);
+    const draftTags = d?.tags, draftCover = d && Object.hasOwn(d, "cover") ? d.cover : undefined;
+    let entry = tileCache.get(p);
+    if (!entry || entry.record !== f || entry.draftTags !== draftTags || entry.draftCover !== draftCover || entry.isDone !== isDone) {
+      const t = tags(p);
+      const state = d ? "待写入" : isDone ? "已完成" : isMissing(f) ? "待补全" : "信息完整";
+      const template = document.createElement("template");
+      template.innerHTML = `<div class="audio-tile ${selected.has(p) ? "selected" : ""}" role="listitem" tabindex="0" data-path="${esc(p)}" aria-label="${esc(t.title || f.filename)}，${state}" aria-selected="${selected.has(p)}"><div class="tile-cover">${artwork(cover(p), (t.album || t.title || f.filename) + " 封面")}<button class="tile-checkbox" aria-label="${selected.has(p) ? "取消选择" : "选择"} ${esc(t.title || f.filename)}" data-select="${esc(p)}">${selected.has(p) ? icon("check") : ""}</button><span class="format-tag">${esc(f.format || "AUDIO")}</span></div><div class="tile-title" title="${esc(t.title || f.filename)}">${esc(t.title || f.filename)}</div><div class="tile-artist" title="${esc(t.artist || "未知艺术家")}">${esc(t.artist || "未知艺术家")} <span>· ${esc(t.album || "未填写专辑")}</span></div><div class="tile-meta"><span class="tile-status ${d ? "draft" : done.has(p) ? "done" : ""}">${icon(d ? "edit" : done.has(p) ? "check-circle" : "music")}${state}</span><span>${duration(f.duration)}</span></div></div>`;
+      const fresh = template.content.firstElementChild;
+      if (entry) {
+        // Keep the focusable tile itself when its title/status changes.
+        entry.node.replaceChildren(...fresh.childNodes);
+        entry.node.setAttribute("aria-label", fresh.getAttribute("aria-label"));
+      } else entry = { node: fresh };
+      Object.assign(entry, { record: f, draftTags, draftCover, isDone, selected: null });
+      tileCache.set(p, entry);
+    }
+    const chosen = selected.has(p);
+    if (entry.selected !== chosen) {
+      entry.node.classList.toggle("selected", chosen);
+      entry.node.setAttribute("aria-selected", String(chosen));
+      const checkbox = entry.node.querySelector(".tile-checkbox");
+      checkbox.setAttribute("aria-label", (chosen ? "取消选择" : "选择") + " " + (tags(p).title || f.filename));
+      checkbox.innerHTML = chosen ? icon("check") : "";
+      entry.selected = chosen;
+    }
+    if (entry.node !== anchor) grid.insertBefore(entry.node, anchor);
+    anchor = entry.node.nextElementSibling;
+  }
+  // No global SVG hydration: static icons were hydrated at boot; tile SVGs are inline.
 }
 function updateButtons() {
   const count = selected.size, locked = busy || !!backgroundTask;
   $$('[data-action="save-all"]').forEach(
     (b) => (b.disabled = locked || !Object.keys(drafts).length),
   );
-  $$('[data-action="batch-match"],[data-action="remove"],[data-action="extract-lyrics"]').forEach(
+  $$('[data-action="batch-match"],[data-action="remove"]').forEach(
     (b) => (b.disabled = locked || !count),
   );
   $$('[data-action="clear"],[data-action="refresh"]').forEach(
@@ -373,10 +420,11 @@ function updateButtons() {
     (b) => (b.disabled = locked || !previewTargets().some((p) => drafts[p])),
   );
   $$('[data-preview-action="match"],[data-preview-action="extract-lyrics"],[data-preview-action="clear-all-tags"]').forEach(b => b.disabled = locked || (b.dataset.previewAction === 'clear-all-tags' && selected.size > 1));
+  $$('[data-action="extract-lyrics"]').forEach(b => { b.disabled = locked; });
   const empty = !current(active);
   $('#preview-card').dataset.empty = String(empty);
   $('#preview-card').querySelectorAll('[data-tag]').forEach(element => { element.disabled = empty; });
-  if (empty) $('#preview-card').querySelectorAll('[data-preview-action]').forEach(button => { button.disabled = true; });
+  if (empty) $('#preview-card').querySelectorAll('[data-preview-action]').forEach(button => { button.disabled = button.dataset.previewAction === 'extract-lyrics' ? locked : true; });
   else $$('[data-preview-action="discard"]').forEach(button => { button.disabled = locked || !previewTargets().some(p => drafts[p]); });
 }
 function render() {
@@ -439,7 +487,7 @@ async function addResult(result) {
   let count = 0;
   for (const f of result.files || []) {
     if (!existing.has(f.path)) {
-      files.push(f);
+      appendRecord(f);
       existing.add(f.path);
       count++;
     }
@@ -549,7 +597,7 @@ async function clearAllTags() {
     const result = await api('clear-tags', [{ path: p, stamp: record.stamp }]);
     for (const item of result.results || []) {
       const index = files.findIndex(f => f.path === item.path);
-      if (index >= 0 && item.record) files[index] = item.record;
+      if (index >= 0 && item.record) replaceRecord(index, item.record);
       delete drafts[item.path]; delete matches[item.path]; done.delete(item.path);
     }
     persist(); render();
@@ -569,7 +617,7 @@ async function writeFiles(paths) {
       done.add(item.path);
       if (item.record) {
         const i = files.findIndex((f) => f.path === item.path);
-        if (i >= 0) files[i] = item.record;
+        if (i >= 0) replaceRecord(i, item.record);
       }
     }
     await refreshAll(true);
@@ -950,8 +998,8 @@ async function restoreBackup(id) {
     const r = await api("restore", id);
     const previous = r.previousPath || r.path;
     const old = files.find((f) => f.path === previous || f.path === r.path);
-    if (old) files[files.indexOf(old)] = r.record;
-    else files.push(r.record);
+    if (old) replaceRecord(files.indexOf(old), r.record);
+    else appendRecord(r.record);
     delete drafts[previous];
     delete drafts[r.path];
     done.delete(previous);
@@ -1146,7 +1194,7 @@ async function renameJobs(jobs, pattern) {
       const old = item.path,
         p = item.newPath;
       const i = files.findIndex((f) => f.path === old);
-      if (i >= 0) files[i] = item.record;
+      if (i >= 0) replaceRecord(i, item.record);
       if (drafts[old]) {
         drafts[p] = drafts[old];
         if (p !== old) delete drafts[old];

@@ -66,6 +66,14 @@ async function fetchLyrics(candidate, options = {}) {
   return { original: result.syncedLyrics || result.lyrics || result.plainLyrics || '', translated: result.translatedLyrics || '',
     instrumental: result.instrumental === true, source: candidate.source, errors: result.errors || [] };
 }
+async function resolve(input, options = {}) {
+  const reference = await require('./lyric-reference.cjs').resolveReference(input, options);
+  const info = await require('./lyric-song.cjs').songInfo(reference, options);
+  options.signal?.throwIfAborted();
+  const candidate = candidateInfo(info.candidate);
+  const lyrics = await fetchLyrics(candidate, options);
+  return { ...lyrics, candidate, errors: [...info.errors, ...lyrics.errors] };
+}
 function preview(data, options = {}) {
   if (typeof data?.original !== 'string' || typeof (data.translated ?? '') !== 'string' || data.original.length + (data.translated || '').length > 2 * 1024 * 1024) throw new Error('歌词文本无效或超过 2 MB');
   const selected = conversionOptions(options);
@@ -81,6 +89,7 @@ function preview(data, options = {}) {
 }
 async function exportLyrics(job, options = {}) {
   options.signal?.throwIfAborted();
+  if (!job.audioPath && !job.directory) throw new Error('没有本地音频时，请先选择歌词保存目录');
   const converted = preview(job, job.options), selected = conversionOptions(job.options);
   const files = [];
   try {
@@ -157,4 +166,4 @@ async function batch(items, options = {}) {
   }
   return { results, errors, canceled: options.signal?.aborted === true };
 }
-module.exports = { sourceOptions, localInfo, candidateInfo, conversionOptions, filenameMetadata, filenames, search, fetchLyrics, preview, exportLyrics, recommended, batch };
+module.exports = { sourceOptions, localInfo, candidateInfo, conversionOptions, filenameMetadata, filenames, search, fetchLyrics, resolve, preview, exportLyrics, recommended, batch };

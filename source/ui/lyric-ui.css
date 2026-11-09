@@ -42,6 +42,17 @@ dialog.lyric-dialog.lyric-dialog-batch { width: min(1040px, calc(100vw - 72px));
 .lyric-song-icon svg { width: 23px; height: 23px; }
 .lyric-search { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; margin: 0; }
 .lyric-search > button { min-height: 38px; }
+.lyric-reference { display: grid; grid-template-columns: minmax(0, 1fr) minmax(170px, 200px) auto; gap: 10px 12px; align-items: end; padding: 0 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
+.lyric-reference > button { min-height: 38px; }
+.lyric-reference > .lyric-hint { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 760px) {
+  .lyric-reference { grid-template-columns: minmax(0, 1fr) auto; }
+  .lyric-reference > .lyric-field:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) {
+  .lyric-reference { grid-template-columns: minmax(0, 1fr); }
+  .lyric-reference > button { justify-self: start; }
+}
 .lyric-alert, .lyric-notice { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 12px; padding: 10px 12px; overflow-wrap: anywhere; font-size: 12px; }
 .lyric-alert { color: var(--accent-text); background: var(--accent-soft); border-left: 3px solid var(--accent-text); }
 .lyric-notice { color: var(--soft); background: var(--surface); }
@@ -49,7 +60,7 @@ dialog.lyric-dialog.lyric-dialog-batch { width: min(1040px, calc(100vw - 72px));
 .lyric-settings > summary { cursor: pointer; min-height: 28px; color: var(--text); font-weight: 600; list-style-position: inside; padding: 3px 0; }
 .lyric-settings > summary svg { width: 16px; height: 16px; margin: 0 5px 2px 0; }
 .lyric-settings summary [data-lyric-setting-summary] { color: var(--soft); font-weight: 400; font-size: 12px; margin-left: 12px; }
-.lyric-settings summary:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; border-radius: 4px; }
+.lyric-settings summary { border-radius: 4px; }
 .lyric-option-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
 .lyric-output-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .lyric-name-custom { grid-column: 1 / -1; }
@@ -88,7 +99,6 @@ dialog.lyric-dialog.lyric-dialog-batch { width: min(1040px, calc(100vw - 72px));
 .lyric-ui .lyric-editor { display: block; height: 244px; min-height: 160px; resize: vertical; font-family: Consolas, "Microsoft YaHei UI", monospace; font-size: 12px; line-height: 1.8; border: 1px solid var(--line); tab-size: 2; }
 .lyric-ui .lyric-editor:disabled { opacity: .65; }
 .lyric-preview { white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; margin: 0; padding: 12px; height: 298px; min-height: 180px; background: var(--solid); border: 1px solid var(--line); border-radius: 10px; color: var(--text); font-family: Consolas, "Microsoft YaHei UI", monospace; font-size: 12px; line-height: 1.8; tab-size: 2; scroll-padding: 8px; }
-.lyric-preview:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
 .lyric-preview-meta { margin: 9px 0 0; color: var(--soft); font-size: 12px; }
 .lyric-format-badge { padding: 1px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-text) !important; font-size: 10px !important; font-weight: 600; letter-spacing: .4px; }
 .lyric-warnings { margin: 8px 0 0; padding-left: 17px; color: var(--soft); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
@@ -139,7 +149,6 @@ dialog.lyric-result-dialog::backdrop { background: rgb(28 20 36 / 30%); }
 .lyric-result-dialog-summary { margin: 12px 0 0; font-size: 13px; line-height: 1.8; color: var(--text); overflow-wrap: anywhere; }
 .lyric-result-dialog-detail { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--solid); color: var(--soft); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; max-height: 132px; overflow: auto; }
 .lyric-result-dialog [data-lyric-result-confirm] { min-height: 40px; min-width: 132px; margin: 22px auto 0; justify-content: center; font-variant-numeric: tabular-nums; }
-.lyric-result-dialog [data-lyric-result-confirm]:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 4px; }
 .lyric-result-dismiss-hint { margin: 12px 0 0; font-size: 11px; color: var(--soft); }
 @media (min-width: 1460px) {
   dialog.lyric-dialog { width: 1320px; padding: 28px; }

@@ -48,7 +48,8 @@ async function buildInstaller() {
   if (fs.existsSync(path.join(portable, 'resources', 'installed-mode'))) throw new Error('Portable resources must not contain installed-mode.');
   const exe = fs.readFileSync(path.join(portable, 'Music Tools.exe'));
   if (exe.readUInt16LE(exe.readUInt32LE(0x3c) + 4) !== 0x8664) throw new Error('Installer payload must be Windows x64.');
-  const files = [...new Set(inventory.files)].sort();
+  // Install the same payload inventory used by the optional, data-safe compression helper.
+  const files = [...new Set([...inventory.files, '.music-tools-generated.json'])].sort();
   const directories = new Set();
   const install = ['!macro MT_InstallPayload'];
   const uninstall = ['!macro MT_UninstallPayload'];

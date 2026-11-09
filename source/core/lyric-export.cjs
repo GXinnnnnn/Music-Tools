@@ -187,14 +187,14 @@ function safeWindowsBasename(value) {
 }
 /** Render a filename stem (without format extension); the suffix is applied after sanitization. */
 function renderFilename({ audioPath, filenameTemplate = '{filename}', metadata = {}, suffix = '' } = {}) {
-  if (typeof audioPath !== 'string' || !audioPath.trim() || /[\\/]$/.test(audioPath)) fail('INVALID_FILENAME', '请提供有效的音频文件名。');
+  if (audioPath != null && audioPath !== '' && (typeof audioPath !== 'string' || !audioPath.trim() || /[\\/]$/.test(audioPath))) fail('INVALID_FILENAME', '请提供有效的音频文件名。');
   if (typeof filenameTemplate !== 'string' || !filenameTemplate.trim() || filenameTemplate.length > 1000) fail('INVALID_TEMPLATE', '文件名模板不能为空，且不能超过 1000 字。');
   const token = /\{(filename|title|artist|album|track|source)\}/g;
   if (/[{}]/.test(filenameTemplate.replace(token, ''))) fail('INVALID_TEMPLATE', '文件名模板含未知占位符，仅支持 filename、title、artist、album、track、source。');
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) fail('INVALID_TEMPLATE', '文件名元数据无效。');
   if (!['', '.original', '.translation'].includes(suffix)) fail('INVALID_FILENAME', '歌词文件后缀必须为空、.original 或 .translation。');
-  const audioName = path.win32.basename(audioPath);
-  const originalStem = audioName.slice(0, audioName.length - path.win32.extname(audioName).length);
+  const audioName = audioPath ? path.win32.basename(audioPath) : '';
+  const originalStem = audioName ? audioName.slice(0, audioName.length - path.win32.extname(audioName).length) : String(metadata.title || 'lyrics').trim() || 'lyrics';
   const fallbacks = { filename: originalStem, title: originalStem, artist: '未知艺术家', album: '未知专辑', track: '未知序号', source: '未知来源' };
   const rendered = filenameTemplate.replace(token, (_, key) => {
     if (key === 'filename') return originalStem;
@@ -239,7 +239,7 @@ async function removeOwned(filename, identity) {
 async function saveLyric({ audioPath, directory, text, format = 'srt', overwrite = false, signal, filenameTemplate = '{filename}', metadata = {}, suffix = '' } = {}) {
   aborted(signal);
   format = normalizeFormat(format);
-  if (typeof audioPath !== 'string' || !audioPath.trim() || /[\\/]$/.test(audioPath)) fail('INVALID_FILENAME', '请提供有效的音频文件名。');
+  if (audioPath != null && audioPath !== '' && (typeof audioPath !== 'string' || !audioPath.trim() || /[\\/]$/.test(audioPath))) fail('INVALID_FILENAME', '请提供有效的音频文件名。');
   if (typeof directory !== 'string' || !path.isAbsolute(directory)) fail('INVALID_DIRECTORY', '请选择有效的绝对路径作为导出目录。');
   if (typeof text !== 'string' || !text.trim()) fail('NO_LYRICS', '没有可导出的歌词文本。');
   if (typeof overwrite !== 'boolean') fail('INVALID_OPTIONS', '覆盖选项必须为布尔值。');
@@ -247,12 +247,12 @@ async function saveLyric({ audioPath, directory, text, format = 'srt', overwrite
   const directoryStat = await checkedDirectory(absolute);
   const stem = renderFilename({ audioPath, filenameTemplate, metadata, suffix });
   const bytes = Buffer.byteLength(text, 'utf8');
-  const audioAbsolute = path.resolve(audioPath);
+  const audioAbsolute = audioPath ? path.resolve(audioPath) : null;
   for (let index = 0; index < 10000; index++) {
     aborted(signal);
     const filename = `${stem}${index ? ` (${index})` : ''}.${format}`;
     const output = path.join(absolute, filename);
-    if (samePath(output, audioAbsolute)) fail('AUDIO_PATH_CONFLICT', '歌词导出路径不能与音频文件相同。');
+    if (audioAbsolute && samePath(output, audioAbsolute)) fail('AUDIO_PATH_CONFLICT', '歌词导出路径不能与音频文件相同。');
     await checkedDirectory(absolute, directoryStat);
     let handle;
     try { handle = await fs.open(output, 'wx', 0o600); }

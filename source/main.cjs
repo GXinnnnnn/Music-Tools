@@ -299,11 +299,12 @@ handle('lyric-search', (query, options = {}) => lyricService().search(String(que
   sources: options.sources, local: options.local, signal: beginLyrics(),
 }));
 handle('lyric-fetch', (candidate) => lyricService().fetchLyrics(candidate, { signal: beginLyrics() }));
+handle('lyric-resolve', (input, options = {}) => lyricService().resolve(input, { source: options.source, signal: beginLyrics() }));
 handle('lyric-preview', (data, options) => lyricService().preview(data, options));
 handle('lyric-filename', (job) => {
-  const audioPath = allow(job.audioPath), record = records.get(audioPath);
+  const audioPath = job.audioPath ? allow(job.audioPath) : undefined, record = records.get(audioPath);
   return lyricService().filenames({ audioPath, options: job.options,
-    metadata: lyricService().filenameMetadata(job.metadata || {}, record?.tags || {}) });
+    metadata: lyricService().filenameMetadata(job.metadata || {}, job.direct === true ? {} : record?.tags || {}) });
 });
 handle('lyric-directory', async () => {
   const result = await dialog.showOpenDialog(win, { title: '选择歌词导出文件夹', properties: ['openDirectory', 'createDirectory'] });
@@ -313,10 +314,10 @@ handle('lyric-directory', async () => {
   return directory;
 });
 handle('lyric-export', async (job) => {
-  const audioPath = allow(job.audioPath), record = records.get(audioPath);
+  const audioPath = job.audioPath ? allow(job.audioPath) : undefined, record = records.get(audioPath);
   const saved = await lyricService().exportLyrics({ ...job, audioPath, directory: lyricDirectory(job.directory),
-    metadata: lyricService().filenameMetadata(job.metadata || {}, record?.tags || {}),
-    options: { ...job.options, duration: record?.duration || job.options?.duration } }, { signal: beginLyrics() });
+    metadata: lyricService().filenameMetadata(job.metadata || {}, job.direct === true ? {} : record?.tags || {}),
+    options: { ...job.options, duration: job.direct === true ? job.options?.duration : record?.duration || job.options?.duration } }, { signal: beginLyrics() });
   for (const file of saved.files) lyricOutputs.add(file.path);
   return saved;
 });

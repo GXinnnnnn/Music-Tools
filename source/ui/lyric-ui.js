@@ -45,9 +45,9 @@
     if (!value?.path) return null;
     return { ...value, tags: { ...value.tags }, local: value.local ? { ...value.local, tags: { ...value.local.tags } } : undefined };
   }
-  const local = (item) => item.local || item;
-  const title = (item) => local(item).tags?.title || local(item).title || basename(item.path).replace(/\.[^.]+$/, "");
-  const artist = (item) => local(item).tags?.artist || local(item).artist || "";
+  const local = (item = {}) => item.local || item;
+  const title = (item = {}) => local(item).tags?.title || local(item).title || basename(item.path).replace(/\.[^.]+$/, "");
+  const artist = (item = {}) => local(item).tags?.artist || local(item).artist || "";
   const live = (s) => session === s && !s.closed && s.dialog.open && s.root.isConnected;
   function announce(text) { config.status?.(text); }
   function setError(s, text = "") {
@@ -70,7 +70,7 @@
     return Boolean(result?.output) || ["success", "exported", "done", "ok"].includes(String(result?.status).toLowerCase());
   }
   function options(s) {
-    const seconds = Number(local(s.song || {}).duration || s.song?.duration);
+    const seconds = Number(s.direct || !s.song?.path ? s.candidate?.duration : local(s.song || {}).duration || s.song?.duration);
     return { format: s.settings.format, layout: s.settings.layout, bilingualMode: s.settings.bilingualMode, separator: s.settings.separator, filenameTemplate: s.settings.filenameTemplate, offsetMs: s.settings.offsetMs, translationOffsetMs: s.settings.translationOffsetMs, ...(seconds > 0 ? { duration: seconds } : {}), overwrite: false };
   }
   function invalidatePreview(s) {
@@ -173,12 +173,16 @@
       <fieldset class="lyric-sources"><legend>歌词来源 <span>同等匹配优先 QQ 音乐</span></legend><div>${Object.entries(SOURCES).map(([key, label]) => `<label><input type="checkbox" data-lyric-source="${key}"${v.sources.includes(key) ? " checked" : ""}>${label}</label>`).join("")}</div></fieldset>
     </details>`;
   }
+  const directoryDefault = (s) => s.song?.path || s.mode === "batch" ? "音频所在文件夹" : "请选择歌词保存目录";
   function directoryHTML(s) {
-    return `<div class="lyric-directory"><div class="lyric-directory-copy"><span>保存位置</span><strong data-lyric-directory title="${e(s.settings.directory || "每首音频所在的文件夹")}">${e(s.settings.directory || "音频所在文件夹")}</strong><small>同名文件自动加序号，保留已有文件。</small></div><div class="lyric-directory-actions"><button type="button" class="button secondary" data-lyric-action="directory">${ico("folder")}选择目录</button><button type="button" class="text-button" data-lyric-action="beside"${s.settings.directory ? "" : " hidden"}>恢复随音频保存</button></div></div>`;
+    return `<div class="lyric-directory"><div class="lyric-directory-copy"><span>保存位置</span><strong data-lyric-directory title="${e(s.settings.directory || directoryDefault(s))}">${e(s.settings.directory || directoryDefault(s))}</strong><small>同名文件自动加序号，保留已有文件。</small></div><div class="lyric-directory-actions"><button type="button" class="button secondary" data-lyric-action="directory">${ico("folder")}选择目录</button><button type="button" class="text-button" data-lyric-action="beside"${s.settings.directory && (s.song?.path || s.mode === "batch") ? "" : " hidden"}>恢复随音频保存</button></div></div>`;
+  }
+  function referenceHTML(s) {
+    return `<div class="lyric-reference"><label class="lyric-field" for="lyric-reference">歌曲链接 / ID<input id="lyric-reference" class="form-input" data-lyric-reference value="${e(s.reference)}" placeholder="粘贴 QQ 音乐、网易云歌曲链接或歌曲 ID" autocomplete="off" spellcheck="false" maxlength="8192" aria-describedby="lyric-reference-hint lyric-error"></label><label class="lyric-field">ID 所属平台<select class="form-input" data-lyric-reference-source><option value="auto"${s.referenceSource === "auto" ? " selected" : ""}>自动识别链接 / MID</option>${Object.entries(SOURCES).map(([key, label]) => `<option value="${key}"${s.referenceSource === key ? " selected" : ""}>${e(label)}</option>`).join("")}</select></label><button type="button" class="button secondary" data-lyric-action="resolve">${ico("lyrics")}从链接 / ID 提取</button><p id="lyric-reference-hint" class="lyric-hint">支持电脑端、移动端歌曲页、分享文本与短链接。链接自动识别平台；纯数字 ID 请先选择所属平台，也可输入 qq:ID 或 netease:ID。</p></div>`;
   }
   function singleHTML(s) {
-    return `<div class="lyric-song"><span class="lyric-song-icon">${ico("lyrics")}</span><div><strong>${e(title(s.song))}</strong><p>${e(artist(s.song) || "未知艺术家")} · ${duration(local(s.song).duration || s.song.duration)} · ${e(basename(s.song.path))}</p></div>${s.batch ? '<button class="text-button" data-lyric-action="back-batch">返回批量结果</button>' : s.items.length > 1 ? '<button class="text-button" data-lyric-action="batch-view">批量提取</button>' : ""}</div>
-      <div class="lyric-alert" data-lyric-error role="alert" hidden></div><div class="lyric-notice" data-lyric-notice role="status" hidden></div>
+    return `${referenceHTML(s)}<div class="lyric-song"><span class="lyric-song-icon">${ico("lyrics")}</span><div><strong>${e(s.song.path ? title(s.song) : s.candidate?.title || "无需导入音频，直接提取歌词")}</strong><p>${s.song.path ? `${e(artist(s.song) || "未知艺术家")} · ${duration(local(s.song).duration || s.song.duration)} · ${e(basename(s.song.path))}` : s.candidate ? `${e(s.candidate.artist || "未知艺术家")} · ${duration(s.candidate.duration)}` : "粘贴歌曲链接或 ID，也可按标题和艺术家搜索；核对后选择目录导出。"}</p></div>${s.batch ? '<button class="text-button" data-lyric-action="back-batch">返回批量结果</button>' : s.items.length > 1 ? '<button class="text-button" data-lyric-action="batch-view">批量提取</button>' : ""}</div>
+      <div class="lyric-alert" id="lyric-error" data-lyric-error role="alert" hidden></div><div class="lyric-notice" data-lyric-notice role="status" hidden></div>
       <form class="lyric-search" data-lyric-search-form><label class="lyric-field">歌曲标题<input class="form-input" data-lyric-query="title" value="${e(s.query.title)}" autocomplete="off"></label><label class="lyric-field">艺术家<input class="form-input" data-lyric-query="artist" value="${e(s.query.artist)}" autocomplete="off"></label><button type="button" class="button secondary" data-lyric-action="search">${ico("search")}搜索歌词</button></form>
       ${settingsHTML(s)}
       <div class="lyric-workspace"><section class="lyric-candidate-panel" aria-labelledby="lyric-candidates-title"><div class="lyric-section-heading"><h3 id="lyric-candidates-title">01 <span>选择匹配结果</span></h3><span data-lyric-candidate-count></span></div><div class="lyric-candidates" data-lyric-candidates><div class="lyric-empty">搜索 QQ 音乐与网易云音乐，选择录音版本后核对歌词。</div></div></section>
@@ -193,7 +197,7 @@
   function batchHTML(s) {
     const b = s.batch;
     return `<div class="lyric-batch-intro"><span class="lyric-song-icon">${ico("lyrics")}</span><div><h3>为 ${s.items.length} 首音频提取歌词</h3><p>按当前设置自动匹配并导出。多个版本难以确定时跳过，完成后可逐首核对。</p></div></div>
-      <div class="lyric-alert" data-lyric-error role="alert" hidden></div><div class="lyric-notice" data-lyric-notice role="status" hidden></div>
+      <div class="lyric-alert" id="lyric-error" data-lyric-error role="alert" hidden></div><div class="lyric-notice" data-lyric-notice role="status" hidden></div>
       <div class="lyric-default-summary" data-lyric-default-summary></div>${settingsHTML(s)}${directoryHTML(s)}
       <div class="lyric-batch-progress" data-lyric-batch-progress${b?.started ? "" : " hidden"}><div><strong data-lyric-progress-label>准备开始</strong><span data-lyric-progress-count>0 / ${s.items.length}</span></div><progress data-lyric-progress max="${s.items.length}" value="0" aria-label="批量歌词提取进度"></progress><p data-lyric-progress-detail></p></div>
       <div class="lyric-section-heading lyric-results-heading"><h3 data-lyric-results-title>${b?.started ? "提取结果" : "本次音频"}</h3><span data-lyric-result-summary>${s.items.length} 首</span></div><div class="lyric-results" data-lyric-results></div>
@@ -231,9 +235,11 @@
     const f = s.dialog.querySelector("#modal-footer");
     f.querySelectorAll("button").forEach((el) => { el.disabled = pending && !["close", "stop"].includes(el.dataset.lyricAction); });
     const stop = f.querySelector('[data-lyric-action="stop"]');
-    if (stop) { stop.hidden = !["search", "fetch", "batch"].includes(s.busy); stop.disabled = Boolean(s.canceling); stop.textContent = s.canceling ? "正在停止…" : s.busy === "batch" ? "停止提取" : "停止查询"; }
+    if (stop) { stop.hidden = !["search", "fetch", "resolve", "batch"].includes(s.busy); stop.disabled = Boolean(s.canceling); stop.textContent = s.canceling ? "正在停止…" : s.busy === "batch" ? "停止提取" : "停止查询"; }
     const exportButton = f.querySelector('[data-lyric-action="export"]');
-    if (exportButton) { exportButton.disabled = pending || invalidSettings || s.previewPending || s.filenamePending || !s.filenames?.length || !s.preview?.text?.trim(); exportButton.innerHTML = `${ico("save")}${s.busy === "export" ? "正在导出…" : "导出 " + s.settings.format.toUpperCase()}`; }
+    if (exportButton) { exportButton.disabled = pending || invalidSettings || s.previewPending || s.filenamePending || !s.filenames?.length || !s.preview?.text?.trim() || (!s.song.path && !s.settings.directory); exportButton.innerHTML = `${ico("save")}${s.busy === "export" ? "正在导出…" : "导出 " + s.settings.format.toUpperCase()}`; }
+    const resolveButton = s.root.querySelector('[data-lyric-action="resolve"]');
+    if (resolveButton) resolveButton.innerHTML = s.busy === "resolve" ? '<span class="busy-indicator"></span>正在解析并提取…' : `${ico("lyrics")}从链接 / ID 提取`;
     const summary = s.root.querySelector("[data-lyric-setting-summary]");
     if (summary) summary.textContent = `${FORMATS[s.settings.format]} · ${LAYOUTS[s.settings.layout]}`;
     const format = s.root.querySelector("[data-lyric-format]");
@@ -259,7 +265,7 @@
       const seconds = Number(item.duration), ownDuration = Number(local(s.song).duration || s.song.duration);
       const difference = seconds > 0 && ownDuration > 0 ? ` · 相差 ${Math.abs(seconds - ownDuration).toFixed(1)} 秒` : "";
       const score = Number(item.score);
-      return `<button type="button" class="lyric-candidate${selected ? " is-selected" : ""}" data-lyric-candidate="${index}" aria-pressed="${selected}"><span class="lyric-candidate-top"><span class="lyric-source">${e(SOURCES[item.source] || item.source)}</span>${Number.isFinite(score) ? `<span>匹配 ${Math.round(score > 1 ? score : score * 100)}%</span>` : ""}</span><strong>${e(item.title || "未提供标题")}</strong><span>${e(item.artist || "未知艺术家")}</span><span class="lyric-candidate-album">${e(item.album || "未提供专辑")}</span><span class="lyric-candidate-duration">${duration(seconds)}${e(difference)}${selected ? " · 已选择" : ""}</span></button>`;
+      return `<button type="button" class="lyric-candidate${selected ? " is-selected" : ""}" data-lyric-candidate="${index}" aria-pressed="${selected}"><span class="lyric-candidate-top"><span class="lyric-source">${e(SOURCES[item.source] || item.source)}</span>${s.direct ? '<span>链接 / ID 指定</span>' : Number.isFinite(score) ? `<span>匹配 ${Math.round(score > 1 ? score : score * 100)}%</span>` : ""}</span><strong>${e(item.title || "未提供标题")}</strong><span>${e(item.artist || "未知艺术家")}</span><span class="lyric-candidate-album">${e(item.album || "未提供专辑")}</span><span class="lyric-candidate-duration">${duration(seconds)}${e(difference)}${selected ? " · 已选择" : ""}</span></button>`;
     }).join("") : `<div class="lyric-empty">${e(s.searched ? "没有找到候选。试试修改标题、艺术家或歌词来源后重新搜索。" : "搜索后选择匹配的歌曲版本。")}</div>`;
     syncControls(s);
   }
@@ -281,7 +287,7 @@
     s.query = { title: s.root.querySelector('[data-lyric-query="title"]').value.trim(), artist: s.root.querySelector('[data-lyric-query="artist"]').value.trim() };
     if (!s.query.title) { setError(s, "请填写歌曲标题后再搜索。"); s.root.querySelector('[data-lyric-query="title"]').focus(); return; }
     if (!s.settings.sources.length) { setError(s, "请在导出与默认设置中至少勾选一个歌词来源。"); s.root.querySelector(".lyric-settings").open = true; return; }
-    setError(s); setNotice(s); clearLyrics(s); s.candidates = []; s.searched = true; s.requests.fetch++;
+    setError(s); setNotice(s); clearLyrics(s); s.direct = false; s.candidates = []; s.searched = true; s.requests.fetch++;
     const id = ++s.requests.search;
     busy(s, "search", `正在为「${title(s.song)}」搜索歌词…`);
     s.root.querySelector("[data-lyric-candidates]").innerHTML = '<div class="lyric-empty" role="status"><span class="busy-indicator"></span>正在搜索歌词来源…</div>';
@@ -308,21 +314,54 @@
       const result = await invoke("lyric-fetch", candidate, {});
       if (!live(s) || id !== s.requests.fetch) return;
       if (s.canceling) { s.candidate = null; setNotice(s, "获取已停止，可以重新选择候选。"); return; }
+      applyLyrics(s, result);
+    } catch (error) { if (live(s) && id === s.requests.fetch) { s.candidate = null; if (s.canceling) setNotice(s, "获取已停止，可以重新选择候选。"); else setError(s, message(error)); } }
+    finally { if (live(s) && id === s.requests.fetch) { s.canceling = false; busy(s, ""); renderCandidates(s); if (!s.loaded) s.root.querySelector("[data-lyric-selected-source]").textContent = "尚未获取歌词"; } }
+  }
+  function applyLyrics(s, result) {
       s.lyrics = { original: String(result?.original || ""), translated: String(result?.translated || "") };
       s.loaded = true;
       for (const key of ["original", "translated"]) s.root.querySelector(`[data-lyric-text="${key}"]`).value = s.lyrics[key];
-      s.root.querySelector("[data-lyric-selected-source]").textContent = SOURCES[result?.source || candidate.source] || result?.source || candidate.source;
+      s.root.querySelector("[data-lyric-selected-source]").textContent = SOURCES[result?.source || s.candidate.source] || result?.source || s.candidate.source;
       const notes = [result?.instrumental ? "来源标记为纯音乐，没有可导出的演唱歌词。" : "", !s.lyrics.translated && !result?.instrumental ? "此来源未提供译文；可使用原文，或在译文页粘贴带时间标签的译文。" : "", providerErrors(result?.errors)].filter(Boolean);
       if (notes.length) setNotice(s, notes.join(" "));
       if (!s.lyrics.original.trim() && !s.lyrics.translated.trim()) setError(s, result?.instrumental ? "纯音乐暂无可导出歌词，请核对其他候选。" : "此候选没有可用歌词，请尝试其他候选。");
       schedulePreview(s, 0);
-    } catch (error) { if (live(s) && id === s.requests.fetch) { s.candidate = null; if (s.canceling) setNotice(s, "获取已停止，可以重新选择候选。"); else setError(s, message(error)); } }
-    finally { if (live(s) && id === s.requests.fetch) { s.canceling = false; busy(s, ""); renderCandidates(s); if (!s.loaded) s.root.querySelector("[data-lyric-selected-source]").textContent = "尚未获取歌词"; } }
+  }
+  async function resolveSong(s) {
+    if (!live(s) || s.busy || s.mode !== "single") return;
+    const field = s.root.querySelector("[data-lyric-reference]");
+    s.reference = field.value.trim();
+    s.referenceSource = s.root.querySelector("[data-lyric-reference-source]").value;
+    if (!s.reference) { setError(s, "请粘贴歌曲链接或填写歌曲 ID。"); field.setAttribute("aria-invalid", "true"); field.focus(); return; }
+    setError(s); setNotice(s); field.removeAttribute("aria-invalid"); clearLyrics(s);
+    s.candidates = []; s.searched = true; s.requests.fetch++; s.requests.search++;
+    const id = ++s.requests.resolve;
+    busy(s, "resolve", "正在识别歌曲链接并提取歌词…");
+    s.root.querySelector("[data-lyric-candidates]").innerHTML = '<div class="lyric-empty" role="status"><span class="busy-indicator"></span>正在解析链接、读取歌曲信息与歌词…</div>';
+    try {
+      const result = await invoke("lyric-resolve", s.reference, { source: s.referenceSource });
+      if (!live(s) || id !== s.requests.resolve) return;
+      if (s.canceling) { setNotice(s, "提取已停止，可修改链接后重试。"); return; }
+      if (!result?.candidate) throw new Error("未识别到歌曲，请检查链接或 ID 后重试。");
+      s.candidates = [result.candidate]; s.candidate = result.candidate; s.direct = true;
+      s.query = { title: result.candidate.title || "", artist: result.candidate.artist || "" };
+      // Rendering refreshes the online song heading while retaining export preferences.
+      render(s); applyLyrics(s, result);
+      announce(s.lyrics.original.trim() || s.lyrics.translated.trim() ? `已取得「${s.candidate.title}」歌词，请核对并导出。` : `「${s.candidate.title}」暂无可用歌词，请检查提示。`);
+    } catch (error) {
+      if (live(s) && id === s.requests.resolve) {
+        if (s.canceling) setNotice(s, "提取已停止，可修改链接后重试。");
+        else { setError(s, message(error)); field.setAttribute("aria-invalid", "true"); }
+      }
+    } finally {
+      if (live(s) && id === s.requests.resolve) { s.canceling = false; busy(s, ""); renderCandidates(s); }
+    }
   }
   function metadata(s, item = s.song) {
     const chosen = s.mode === "single" && item?.path === s.song?.path ? s.candidate || {} : {};
-    const fields = { ...chosen, ...local(item || {}).tags };
-    return { title: fields.title || title(item), artist: fields.artist || artist(item), album: fields.album || "", track: fields.track || "", source: chosen.source || "" };
+    const fields = s.direct || !item?.path ? { ...chosen } : { ...chosen, ...local(item || {}).tags };
+    return { title: fields.title || (s.direct ? "" : title(item)), artist: fields.artist || (s.direct ? "" : artist(item)), album: fields.album || "", track: fields.track || "", source: chosen.source || "" };
   }
   function scheduleFilename(s, delay = 180) {
     clearTimeout(s.filenameTimer);
@@ -334,7 +373,7 @@
     s.filenameTimer = setTimeout(async () => {
       try {
         const item = s.mode === "batch" ? s.items[0] : s.song;
-        const result = await invoke("lyric-filename", { audioPath: item.path, metadata: metadata(s, item), options: options(s) });
+        const result = await invoke("lyric-filename", { audioPath: item.path, direct: s.direct, metadata: metadata(s, item), options: options(s) });
         if (!live(s) || id !== s.requests.filename) return;
         s.filenames = Array.isArray(result?.filenames) ? result.filenames : [];
         if (el) el.textContent = s.filenames.length ? s.filenames.join(" · ") : "没有可用的文件名，请检查模板。";
@@ -368,7 +407,7 @@
         const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
         const list = s.root.querySelector("[data-lyric-warnings]");
         list.innerHTML = warnings.map((warning) => `<li>${e(typeof warning === "string" ? warning : message(warning))}</li>`).join(""); list.hidden = !warnings.length;
-        if (footer) footer.textContent = s.preview ? "请核对预览中的歌词与时间轴" : "检查歌词内容后重试";
+        if (footer) footer.textContent = s.preview ? !s.song.path && !s.settings.directory ? "请选择保存目录，再导出歌词" : "请核对预览中的歌词与时间轴" : "检查歌词内容后重试";
       } catch (error) {
         if (!live(s) || id !== s.requests.preview) return;
         s.preview = null;
@@ -379,13 +418,13 @@
     }, delay);
   }
   async function exportLyrics(s) {
-    if (!live(s) || s.busy || s.previewPending || s.filenamePending || !s.filenames?.length || !s.preview?.text?.trim() || [...s.root.querySelectorAll('[type="number"]')].some((el) => !el.validity.valid)) return;
+    if (!live(s) || s.busy || s.previewPending || s.filenamePending || !s.filenames?.length || !s.preview?.text?.trim() || (!s.song.path && !s.settings.directory) || [...s.root.querySelectorAll('[type="number"]')].some((el) => !el.validity.valid)) return;
     setError(s); setNotice(s);
     const id = ++s.requests.export;
     s.resultFocus = document.activeElement;
-    busy(s, "export", `正在导出「${title(s.song)}」歌词…`);
+    busy(s, "export", `正在导出「${metadata(s).title}」歌词…`);
     try {
-      const result = await invoke("lyric-export", { audioPath: s.song.path, original: s.lyrics.original, translated: s.lyrics.translated, directory: s.settings.directory, metadata: metadata(s), candidate: s.candidate, options: options(s) });
+      const result = await invoke("lyric-export", { audioPath: s.song.path, direct: s.direct, original: s.lyrics.original, translated: s.lyrics.translated, directory: s.settings.directory, metadata: metadata(s), candidate: s.candidate, options: options(s) });
       if (!live(s) || id !== s.requests.export) return;
       if (!result?.path) throw new Error("导出未返回保存路径，请重试。");
       const files = Array.isArray(result.files) && result.files.length ? result.files : [result];
@@ -393,7 +432,7 @@
       setNotice(s, text); config.toast?.(`歌词已保存${files.length > 1 ? " " + files.length + " 个文件" : "：" + (result.filename || basename(result.path))}`); announce(text);
       s.dialog.querySelector("[data-lyric-footer-status]").textContent = `已保存 ${result.filename || basename(result.path)}`;
       if (s.batch) s.batch.results.set(s.song.path, { path: s.song.path, output: result.path, outputs: files.map((file) => file.path), status: "exported", message: "已通过单首核对导出", candidate: s.candidate });
-      showResult(s, { kind: "success", heading: "歌词导出成功", summary: `已为「${title(s.song)}」保存 ${files.length} 个 ${s.settings.format.toUpperCase()} 文件。`, detail: files.map((file) => file.filename || basename(file.path)).join(" · ") });
+      showResult(s, { kind: "success", heading: "歌词导出成功", summary: `已为「${metadata(s).title}」保存 ${files.length} 个 ${s.settings.format.toUpperCase()} 文件。`, detail: files.map((file) => file.filename || basename(file.path)).join(" · ") });
     } catch (error) {
       if (live(s) && id === s.requests.export) {
         setError(s, message(error));
@@ -506,8 +545,8 @@
   }
   function updateDirectory(s) {
     const label = s.root.querySelector("[data-lyric-directory]");
-    label.textContent = s.settings.directory || "音频所在文件夹"; label.title = s.settings.directory || "每首音频所在的文件夹";
-    s.root.querySelector('[data-lyric-action="beside"]').hidden = !s.settings.directory;
+    label.textContent = s.settings.directory || directoryDefault(s); label.title = s.settings.directory || directoryDefault(s);
+    s.root.querySelector('[data-lyric-action="beside"]').hidden = !s.settings.directory || (!s.song.path && s.mode !== "batch");
   }
   async function stop(s) {
     if (!s.busy || s.canceling) return;
@@ -518,7 +557,7 @@
   function reviewSong(s, item) {
     if (!item || s.busy) return;
     s.requests.search++; s.requests.fetch++;
-    s.song = item; s.query = { title: title(item), artist: artist(item) }; s.candidates = []; s.searched = false;
+    s.reference = ""; s.direct = false; s.song = item; s.query = { title: title(item), artist: artist(item) }; s.candidates = []; s.searched = false;
     s.loaded = false; s.candidate = null; s.lyrics = { original: "", translated: "" }; s.mode = "single";
     render(s); search(s);
   }
@@ -541,6 +580,7 @@
     if (button.dataset.lyricReview !== undefined) return reviewSong(s, s.items[Number(button.dataset.lyricReview)]);
     if (button.dataset.lyricTab) return switchTab(s, button.dataset.lyricTab);
     if (key === "search") return search(s);
+    if (key === "resolve") return resolveSong(s);
     if (key === "export") return exportLyrics(s);
     if (key === "directory") return chooseDirectory(s);
     if (key === "beside") { s.settings.directory = ""; persist(s); updateDirectory(s); }
@@ -551,6 +591,7 @@
   function input(s, event) {
     if (s.busy) return;
     const el = event.target;
+    if (el.matches("[data-lyric-reference]")) { s.reference = el.value; el.removeAttribute("aria-invalid"); setError(s); }
     if (el.dataset.lyricQuery) s.query[el.dataset.lyricQuery] = el.value;
     if (el.dataset.lyricText) { s.lyrics[el.dataset.lyricText] = el.value; setError(s); schedulePreview(s); }
     const key = el.dataset.lyricSetting;
@@ -564,6 +605,7 @@
   function change(s, event) {
     if (s.busy) return;
     const el = event.target, key = el.dataset.lyricSetting;
+    if (el.matches("[data-lyric-reference-source]")) { s.referenceSource = el.value; s.root.querySelector("[data-lyric-reference]").removeAttribute("aria-invalid"); setError(s); }
     if (key && ["format", "layout", "bilingualMode"].includes(key)) { s.settings[key] = el.value; persist(s); setError(s); schedulePreview(s); syncControls(s); }
     if (el.matches('[data-lyric-name-preset]')) {
       const custom = el.value === "custom";
@@ -580,14 +622,13 @@
     if (typeof config.modal !== "function") throw new Error("MusicLyrics.configure() requires the application's modal helper.");
     const items = [...new Map((config.getSelected?.() || []).map(record).filter(Boolean).map((item) => [item.path, item])).values()];
     const active = record(config.getActive?.()) || items[0];
-    if (!active && !items.length) { config.toast?.("请先导入并选择本地音频，再提取歌词。"); return; }
     if (!items.length && active) items.push(active);
-    const chosenMode = mode === "single" ? "single" : mode === "batch" || items.length >= 2 ? "batch" : "single";
+    const chosenMode = !items.length || mode === "single" ? "single" : mode === "batch" || items.length >= 2 ? "batch" : "single";
     config.modal(chosenMode === "single" ? "提取歌词 · 单首核对" : "批量提取歌词", '<div id="lyric-ui" class="lyric-ui"></div>', "", "MUSIC TOOLS / LYRICS");
     const dialog = document.querySelector("#modal"), root = dialog.querySelector("#lyric-ui");
-    const s = { id: ++serial, dialog, root, items, song: active || items[0], mode: chosenMode, settings: loadSettings(), settingsOpen: false,
+    const s = { id: ++serial, dialog, root, items, song: active || items[0] || { path: "", tags: {} }, reference: "", referenceSource: "auto", direct: false, mode: chosenMode, settings: loadSettings(), settingsOpen: false,
       busy: "", closed: false, canceling: false, candidates: [], candidate: null, searched: false, loaded: false, filenames: [], filenamePending: false,
-      lyrics: { original: "", translated: "" }, preview: null, previewPending: false, requests: { search: 0, fetch: 0, preview: 0, filename: 0, export: 0, batch: 0 }, batch: null };
+      lyrics: { original: "", translated: "" }, preview: null, previewPending: false, requests: { resolve: 0, search: 0, fetch: 0, preview: 0, filename: 0, export: 0, batch: 0 }, batch: null };
     s.settingsOpen = chosenMode === "batch";
     s.query = { title: title(s.song), artist: artist(s.song) };
     session = s; dialog.classList.add("lyric-dialog"); dialog.setAttribute("aria-labelledby", "modal-title");
@@ -596,6 +637,7 @@
     s.onClick = (event) => { action(s, event).catch((error) => { if (live(s)) { setError(s, message(error)); busy(s, ""); } }); };
     s.onInput = (event) => input(s, event); s.onChange = (event) => change(s, event);
     s.onKeydown = (event) => {
+      if (event.target.matches("[data-lyric-reference]" ) && event.key === "Enter") { event.preventDefault(); resolveSong(s); }
       if (event.target.matches("[data-lyric-query]") && event.key === "Enter") { event.preventDefault(); search(s); }
       if (event.target.matches("[data-lyric-tab]") && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); switchTab(s, event.key === "Home" ? "original" : event.key === "End" ? "translated" : event.target.dataset.lyricTab === "original" ? "translated" : "original", true); }
     };
@@ -609,7 +651,7 @@
       s.unsubscribe = subscribe?.((event) => progress(s, event));
     } catch {}
     render(s);
-    if (chosenMode === "single") search(s);
+    if (chosenMode === "single") { if (s.query.title) search(s); else root.querySelector("[data-lyric-reference]").focus(); }
     else dialog.querySelector('[data-lyric-action="start"]')?.focus();
   }
   window.MusicLyrics = { configure, open };

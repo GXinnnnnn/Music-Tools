@@ -85,6 +85,7 @@ async function buildPortable() {
     if (isPublicDoc(relative)) desired.set(relative, filename);
   }
   desired.set('resources/app/package.json', null);
+  desired.set('节省磁盘空间.cmd', path.join(root, 'scripts', 'compact-program.cmd'));
   legacy.add('resources/app/package.json');
   legacy.add('resources/installed-mode');
   legacy.add('docs/original-analysis.md');
