@@ -252,30 +252,34 @@ handle("batch-match", async (items, options = {}) => {
   controller?.abort(); controller = new AbortController();
   const signal = controller.signal, results = [], errors = [];
   let next = 0, done = 0;
-  // Three recording lookups overlap network latency; each provider owns its own rate limit.
+  // Six recordings overlap slow responses; providers still enforce their own request intervals.
   const worker = async () => {
     while (next < items.length && !signal.aborted) {
       const index = next++, item = items[index];
+      let result, error;
       try {
         const p = allow(item.path), current = mergedLocal(p, item.local || {}), effective = searchOptions(current, options);
-        if (!effective.fields.length) results.push({ path: p, candidates: [], recommendedIndex: -1, errors: [], skipped: true });
+        if (!effective.fields.length) result = { path: p, candidates: [], recommendedIndex: -1, errors: [], skipped: true };
         else {
           const local = effective.local;
           const r = await providers.search(providers.lookupQuery(local), { ...effective, autoFilename: true, signal });
           const ranked = providers.rankCandidates(local, r.candidates, options);
-          results.push({ path: p, candidates: ranked.slice(0, 8),
+          result = { path: p, candidates: ranked.slice(0, 8),
             recommendedIndex: ranked[0] && providers.isRecommendedCandidate(local, ranked[0]) && !ranked.slice(1).some(c => providers.isRecommendedCandidate(local, c) && c.artist?.toLowerCase() !== ranked[0].artist?.toLowerCase() && ranked[0].score - c.score < 8) ? 0 : -1,
-            errors: r.errors });
+            errors: r.errors };
         }
       } catch (e) {
         if (signal.aborted) break;
-        errors.push({ path: item.path, error: e.message });
+        error = { path: item.path, error: e.message };
       }
-      const event = { kind: 'match', operationId: String(options.operationId || '').slice(0, 100), done: ++done, total: items.length };
+      if (result) results.push(result);
+      if (error) errors.push(error);
+      // Stream only this completed recording, rather than resending the growing result list.
+      const event = { kind: 'match', operationId: String(options.operationId || '').slice(0, 100), done: ++done, total: items.length, result, error };
       progress(event); win?.webContents.send('match-progress', event);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(3, items.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(6, items.length) }, worker));
   const order = new Map(items.map((item, i) => [item.path, i]));
   results.sort((a, b) => order.get(a.path) - order.get(b.path));
   return { results, errors, canceled: signal.aborted };
@@ -480,7 +484,7 @@ if (!app.requestSingleInstanceLock()) {
       minWidth: 980,
       minHeight: 680,
       title: "Music Tools",
-      icon: path.join(__dirname, "ui/assets/icon.png"),
+      icon: path.join(__dirname, process.platform === "win32" ? "ui/assets/icon.ico" : "ui/assets/icon.png"),
       frame: false,
       backgroundColor: "#e8e9f1",
       show: false,

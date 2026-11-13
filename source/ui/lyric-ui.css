@@ -142,7 +142,7 @@ dialog.lyric-dialog.lyric-dialog-batch { width: min(1040px, calc(100vw - 72px));
 .lyric-result-actions .text-button svg { width: 15px; height: 15px; }
 .lyric-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 dialog.lyric-result-dialog { width: min(440px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100dvh - 40px); margin: auto; padding: 28px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); overflow: auto; text-align: center; }
-dialog.lyric-result-dialog::backdrop { background: rgb(28 20 36 / 30%); }
+dialog.lyric-result-dialog::backdrop { background: var(--scrim); }
 .lyric-result-emblem { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; margin: 0 auto 16px; border-radius: 18px; background: var(--accent-soft); color: var(--accent-text); }
 .lyric-result-emblem svg { width: 32px; height: 32px; }
 .lyric-result-dialog h2 { margin: 0; color: var(--text); font-size: 19px; font-weight: 650; line-height: 1.5; }

@@ -24,6 +24,7 @@
   --panel-edge: rgba(255, 255, 255, 0.5);
   --success: #32785c;
   --shadow: 0 16px 45px rgba(56, 47, 78, 0.09);
+  --scrim: rgb(36 33 53 / 40%);
   --radius: 18px;
   --grid-size: 172px;
   font-family:
@@ -54,6 +55,7 @@
   --panel-edge: rgba(218, 209, 232, 0.14);
   --success: #83ceab;
   --shadow: 0 16px 45px rgba(0, 0, 0, 0.2);
+  --scrim: rgb(10 8 16 / 56%);
 }
 * {
   box-sizing: border-box;
@@ -86,6 +88,67 @@ button {
 button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+/* The closed control and its top-layer picker share the application theme. */
+select:not([multiple]) {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+select:disabled { opacity: .5; cursor: default; }
+@supports (appearance: base-select) {
+  select:not([multiple]), select:not([multiple])::picker(select) { appearance: base-select; }
+  select:not([multiple]) { align-items: center; justify-content: space-between; gap: 10px; }
+  select:not([multiple]):hover:not(:disabled), select:not([multiple]):open { border-color: var(--accent-text); }
+  select:not([multiple])::picker-icon {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    color: var(--soft);
+    rotate: 45deg;
+    margin: -3px 2px 0 4px;
+  }
+  select:not([multiple]):open::picker-icon { rotate: 225deg; margin-top: 3px; color: var(--accent-text); }
+  select:not([multiple])::picker(select) {
+    min-inline-size: anchor-size(self-inline);
+    max-inline-size: min(720px, calc(100vw - 24px));
+    max-block-size: min(320px, calc(100dvh - 24px));
+    margin-block: 4px;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--solid);
+    color: var(--text);
+    box-shadow: var(--shadow);
+    font: inherit;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scroll-padding: 4px;
+  }
+  select:not([multiple]) option {
+    min-block-size: 34px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    gap: 8px;
+    background: transparent;
+    color: var(--text);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+    cursor: pointer;
+  }
+  select:not([multiple]) option:is(:hover, :focus-visible) { background: var(--accent-soft); }
+  select:not([multiple]) option:checked { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+  select:not([multiple]) option::checkmark { content: "✓"; color: var(--accent-text); font-weight: 700; }
+  select:not([multiple]) option:disabled { opacity: .5; cursor: default; }
 }
 /* Keep the focus line inside control edges, including clipped scroll panels. */
 :focus-visible,
@@ -548,8 +611,10 @@ h1 .title-dot {
   margin-left: 7px;
   color: var(--text);
 }
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: var(--muted);
+  opacity: 1;
 }
 .sort-label select {
   background: transparent;
@@ -680,13 +745,13 @@ input::placeholder {
   right: -64px;
   transform: rotate(4deg);
   font-size: 11px;
-  border: 1px solid #ffffff99;
-  background: #fffdfdce;
+  border: 1px solid var(--panel-edge);
+  background: var(--input);
   backdrop-filter: blur(10px);
   padding: 10px 15px;
   border-radius: 11px;
-  color: #8b648a;
-  box-shadow: 0 8px 25px #69517218;
+  color: var(--accent-text);
+  box-shadow: var(--shadow);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1243,7 +1308,8 @@ input::placeholder {
   padding: 0;
   align-self: center;
 }
-.field input.changed {
+.field input.changed,
+.field textarea.changed {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1518,7 +1584,7 @@ input::placeholder {
   animation: card-in 0.2s ease-out;
 }
 .toast.error {
-  border-color: #c1567255;
+  border-color: color-mix(in srgb, var(--danger-text) 35%, transparent);
 }
 .toast button {
   color: var(--accent-text);
@@ -1562,7 +1628,7 @@ dialog {
   max-width: min(1040px, calc(100vw - 40px));
 }
 dialog::backdrop {
-  background: #24213565;
+  background: var(--scrim);
   backdrop-filter: blur(8px);
 }
 .modal-heading {
@@ -2188,11 +2254,16 @@ dialog::backdrop {
     margin-top: 6px;
   }
 }
-#batch-toolbar { position: sticky; top: -20px; z-index: 2; padding: 12px 0; background: var(--solid); }
+#batch-settings { margin: 0 0 14px; }
+#batch-settings > summary { padding: 6px 2px; color: var(--soft); cursor: pointer; border-radius: 4px; }
+#batch-toolbar { position: sticky; top: 0; z-index: 2; padding: 12px 0; background: var(--solid); }
+#batch-toolbar .mini-actions { align-items: center; margin: 0; }
+#batch-filter { width: auto; min-width: 150px; min-height: 34px; flex: 0 1 auto; }
+#modal-body:has(#batch-toolbar:not([hidden])) { scroll-padding-block-start: calc(var(--batch-toolbar-height, 100px) + 6px); }
 #batch-summary { display: block; margin-bottom: 10px; color: var(--soft); }
 .batch-row { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; padding: 18px 0; border-bottom: 1px solid var(--line); }
 .batch-check { padding-top: 2px; }
-.batch-check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.batch-check input { width: 18px; height: 18px; }
 .batch-row-content { min-width: 0; }
 .batch-row-content > strong { overflow-wrap: anywhere; }
 .batch-row-content select { width: 100%; margin: 8px 0; }

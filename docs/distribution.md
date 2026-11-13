@@ -1,16 +1,16 @@
 # 构建与发布
 
-Music Tools v1.0.1 面向 Windows x64。安装版、便携版均内置 Electron 40.10.6、Python 3.12.10、Mutagen 和离线繁简转换组件，使用者无需安装 Node.js 或 Python。源代码包面向开发者。
+Music Tools v1.0.2 面向 Windows x64。安装版、便携版均内置 Electron 40.10.6、Python 3.12.10、Mutagen 和离线繁简转换组件，使用者无需安装 Node.js 或 Python。源代码包面向开发者。
 
 ## 下载文件
 
 | 文件 | 用途 |
 | --- | --- |
-| `Music-Tools-1.0.1-Setup-x64.exe` | 当前用户安装，可选安装目录，提供快捷方式和卸载入口 |
-| `Music-Tools-1.0.1-Portable-x64.zip` | 解压后运行 `Music Tools/Music Tools.exe`，保留整个目录 |
-| `Music-Tools-1.0.1-Source.zip` | 项目源码、构建脚本与许可证，不包含运行库二进制 |
+| `Music-Tools-1.0.2-Setup-x64.exe` | 当前用户安装，可选安装目录，提供快捷方式和卸载入口 |
+| `Music-Tools-1.0.2-Portable-x64.zip` | 解压后运行 `Music Tools/Music Tools.exe`，保留整个目录 |
+| `Music-Tools-1.0.2-Source.zip` | 项目源码、构建脚本与许可证，不包含运行库二进制 |
 
-公开归档同时生成 `SHA256SUMS.txt`。当前版本为 1.0.1，可从 [GitHub Releases](https://github.com/GXinnnnnn/Music-Tools/releases/tag/v1.0.1) 下载；本地构建和归档不会自动发布。
+公开归档同时生成 `SHA256SUMS.txt`。当前版本为 1.0.2，可从 [GitHub Releases](https://github.com/GXinnnnnn/Music-Tools/releases/tag/v1.0.2) 下载；本地构建和归档不会自动发布。
 
 文件名版本由根目录的 `package.json` 决定。
 
@@ -26,7 +26,7 @@ npm start
 npm run package
 ```
 
-`npm ci` 按锁文件安装 Electron、rcedit、electron-builder 等开发依赖。首次构建还可能下载 NSIS 编译器，需要联网。构建输出位于 `release/`，构建记录位于 `artifacts/`。安装文件名为 `Music Tools Setup 1.0.1 x64.exe`。
+`npm ci` 按锁文件安装 Electron、rcedit、electron-builder 等开发依赖。首次构建还可能下载 NSIS 编译器，需要联网。构建输出位于 `release/`，构建记录位于 `artifacts/`。安装文件名为 `Music Tools Setup 1.0.2 x64.exe`。
 
 Python 引导脚本下载官方嵌入式运行库，完整校验后才解压：
 
@@ -76,6 +76,9 @@ npm run test:ui:workspace
 npm run test:ui:lyric-results
 node scripts/ui-lyric-reference-check.cjs
 node scripts/ui-focus-check.cjs
+node scripts/ui-batch-write-check.cjs
+node scripts/ui-batch-stream-check.cjs
+node scripts/ui-theme-check.cjs
 npm run test:release
 npm run test:installer
 ```
@@ -85,7 +88,7 @@ npm run test:installer
 安装测试在 `artifacts/installer-smoke/` 下的独立目录安装、启动、运行引擎、卸载，并用哨兵音频和数据检查保留行为。已有 Music Tools 安装或快捷方式注册时会拒绝测试，避免覆盖用户环境。可显式传入安装包：
 
 ```powershell
-node scripts/installer-check.cjs '.\release\Music Tools Setup 1.0.1 x64.exe'
+node scripts/installer-check.cjs '.\release\Music Tools Setup 1.0.2 x64.exe'
 ```
 
 ## 生成公开归档
@@ -111,9 +114,9 @@ node scripts/public-release.cjs --staging . --source-only
 核对下载文件：
 
 ```powershell
-Get-FileHash '.\Music-Tools-1.0.1-Source.zip' -Algorithm SHA256
-Get-FileHash '.\Music-Tools-1.0.1-Portable-x64.zip' -Algorithm SHA256
-Get-FileHash '.\Music-Tools-1.0.1-Setup-x64.exe' -Algorithm SHA256
+Get-FileHash '.\Music-Tools-1.0.2-Source.zip' -Algorithm SHA256
+Get-FileHash '.\Music-Tools-1.0.2-Portable-x64.zip' -Algorithm SHA256
+Get-FileHash '.\Music-Tools-1.0.2-Setup-x64.exe' -Algorithm SHA256
 Get-Content '.\SHA256SUMS.txt'
 ```
 

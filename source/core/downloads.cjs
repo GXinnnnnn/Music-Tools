@@ -9,7 +9,9 @@ function imageMime(bytes){
 async function downloadCover(url,options={}){
  const parsed=new URL(url);if(!['http:','https:'].includes(parsed.protocol))throw new Error('封面地址无效');
  const maxBytes=options.maxBytes??20*1024*1024;
- const response=await (options.fetch||globalThis.fetch)(parsed,{signal:options.signal||AbortSignal.timeout(20000)});
+ const deadline=AbortSignal.timeout(options.timeoutMs??20000);
+ const signal=options.signal?AbortSignal.any([options.signal,deadline]):deadline;
+ const response=await (options.fetch||globalThis.fetch)(parsed,{signal});
  if(!response.ok)throw new Error('封面下载失败 '+response.status);
  const tooLarge=()=>new Error('封面大于20MB');
  if(Number(response.headers.get('content-length'))>maxBytes){await response.body?.cancel();throw tooLarge();}

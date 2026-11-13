@@ -1,10 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
   <title id="title">Music Tools — 黄底粉色音符</title>
-  <desc id="desc">底层明亮的黄色实心圆，粉色音符的细上端与放大倾斜符头由连续曲线连接，天蓝色叠影向右下错开。</desc>
+  <desc id="desc">略放大的粉色音符与天蓝色叠影，黄色圆底略缩小并偏向左下，整体左右留白均衡。</desc>
   <defs>
     <path id="note" d="M244 76Q244 63 255 69C284 87 316 99 337 121C349 135 354 151 356 165Q357 172 350 169C326 162 305 144 282 134V296C282 329 254 358 217 376C183 393 148 391 129 372C110 353 117 325 141 301C163 279 195 260 220 261C234 262 244 266 244 246V76Z"/>
   </defs>
-  <circle cx="200" cy="324" r="164" fill="#ffdf58"/>
-  <use href="#note" transform="translate(23 16)" fill="#80cbed"/>
-  <use href="#note" fill="#ff5da8"/>
+  <!-- Enlarge the mark slightly; keep the smaller base offset to the lower left. -->
+  <g transform="translate(-3.25 -70) scale(1.22)">
+    <circle cx="204" cy="292" r="158" fill="#ffdf58"/>
+    <use href="#note" transform="translate(23 16)" fill="#80cbed"/>
+    <use href="#note" fill="#ff5da8"/>
+  </g>
 </svg>

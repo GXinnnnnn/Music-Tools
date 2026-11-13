@@ -4,23 +4,23 @@
 
 <p align="center"><strong>让每一首本地音乐，都有完整的归属。</strong></p>
 <p align="center">标签编辑 · 六来源补全 · 封面管理 · 双语歌词导出 · 批量整理</p>
-<p align="center">Windows x64 · v1.0.1 · GPL-3.0-or-later</p>
+<p align="center">Windows x64 · v1.0.2 · GPL-3.0-or-later</p>
 
-<p align="center"><a href="https://github.com/GXinnnnnn/Music-Tools/releases/tag/v1.0.1">下载 1.0.1</a> · <a href="docs/lyrics.md">歌词使用说明</a> · <a href="docs/providers.md">在线来源说明</a> · <a href="docs/text-tools.md">文本工具说明</a> · <a href="https://github.com/GXinnnnnn/Music-Tools/issues">反馈问题</a></p>
+<p align="center"><a href="https://github.com/GXinnnnnn/Music-Tools/releases/tag/v1.0.2">下载 1.0.2</a> · <a href="docs/lyrics.md">歌词使用说明</a> · <a href="docs/providers.md">在线来源说明</a> · <a href="docs/text-tools.md">文本工具说明</a> · <a href="https://github.com/GXinnnnnn/Music-Tools/issues">反馈问题</a></p>
 
-Music Tools 是一款面向本地音乐收藏的 Windows 桌面整理工具。用大封面网格浏览音乐，在常驻详情栏编辑属性，从六个在线来源寻找封面与资料，核对候选后保存草稿，再统一写入。歌词工作台支持 QQ 音乐与网易云音乐，可预览、编辑原文和译文，并导出 SRT、LRC 或 TXT。
+Music Tools 是一款面向本地音乐收藏的 Windows 桌面整理工具。用大封面网格浏览音乐，在常驻详情栏编辑属性，从六个在线来源寻找封面与资料，批量检索时可边等待边核对、勾选，检索完成后直接在结果页审核并写入，也可先保存草稿。歌词工作台支持 QQ 音乐与网易云音乐，可预览、编辑原文和译文，并导出 SRT、LRC 或 TXT。
 
 ![Music Tools：大封面网格与常驻音乐详情栏](docs/images/library.png)
 
 ## 下载与运行
 
-当前版本为 **1.0.1**，提供安装包、便携 ZIP 与源码 ZIP，运行版自带所需环境，无需安装 Node.js 或 Python。
+当前版本为 **1.0.2**，提供安装包、便携 ZIP 与源码 ZIP，运行版自带所需环境，无需安装 Node.js 或 Python。
 
 | 下载 | 适合用途 |
 | --- | --- |
-| [Music-Tools-1.0.1-Setup-x64.exe](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.1/Music-Tools-1.0.1-Setup-x64.exe) | 安装版：可选择安装目录，提供快捷方式与卸载入口 |
-| [Music-Tools-1.0.1-Portable-x64.zip](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.1/Music-Tools-1.0.1-Portable-x64.zip) | 便携版：解压到可写位置，运行文件夹中的 `Music Tools.exe` |
-| [Music-Tools-1.0.1-Source.zip](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.1/Music-Tools-1.0.1-Source.zip) | 源码包：用于开发与自行构建 |
+| [Music-Tools-1.0.2-Setup-x64.exe](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.2/Music-Tools-1.0.2-Setup-x64.exe) | 安装版：可选择安装目录，提供快捷方式与卸载入口 |
+| [Music-Tools-1.0.2-Portable-x64.zip](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.2/Music-Tools-1.0.2-Portable-x64.zip) | 便携版：解压到可写位置，运行文件夹中的 `Music Tools.exe` |
+| [Music-Tools-1.0.2-Source.zip](https://github.com/GXinnnnnn/Music-Tools/releases/download/v1.0.2/Music-Tools-1.0.2-Source.zip) | 源码包：用于开发与自行构建 |
 
 便携版请保留**整个解压文件夹**，不要单独移动 EXE；配置、工作区和备份保存在程序旁的 `data/`。安装版将这些数据保存在当前用户的应用数据目录 `%APPDATA%\Music Tools`。完整文件备份需要相应的磁盘空间。
 
@@ -38,8 +38,8 @@ Windows 10 / 11 的 NTFS 磁盘可选择使用透明压缩。关闭 Music Tools 
 
 1. 添加音频、导入文件夹，或把文件和文件夹拖入窗口。空队列也可加载内置演示音频体验功能。
 2. 单击封面，在右侧详情栏查看和编辑；按住 `Ctrl` 多选，或使用 `Shift` 连选。
-3. 点击“补全信息”或“补全所选”，选择平台与同步字段，核对歌曲、作者和发行版本，将需要的信息加入草稿。
-4. 检查草稿后点击写入。自动备份开启时，已有标签或图片的文件会在修改前备份，可从“写入历史”恢复。
+3. 点击“补全信息”或“补全所选”，选择平台与同步字段，核对歌曲、作者和发行版本。批量结果会逐条出现，可边等待边选择候选和勾选。
+4. 批量检索完成后，点击右下角“审核并写入／覆盖”直接保存所选结果；也可选择“仅加入草稿”，之后再写入。自动备份开启时，已有标签或图片的文件会在修改前备份，可从“写入历史”恢复。
 5. 需要独立歌词文件时，进入“提取歌词”或“歌词工作台”，预览导出内容后保存。
 
 ![空队列：导入本地音频或体验演示音频](docs/images/empty.png)
@@ -68,7 +68,11 @@ Windows 10 / 11 的 NTFS 磁盘可选择使用透明压缩。关闭 Music Tools 
 - 可逐项采用候选内容，或使用“只选封面＋作者＋专辑”快捷组合。
 - 没有选择来源或字段时不发送搜索请求；仅补空缺且所选信息已齐全时跳过查询。
 
+批量结果按完成顺序逐条出现，检索期间可选择候选、展开差异和勾选，新结果不会重置已有选择。检索完成后，右下角直接“审核并写入／覆盖”所选歌曲；失败项保留草稿并可重试，停止获取不会继续自动写入。写入范围遵循选定的字段和覆盖规则，仍可使用“仅加入草稿”。
+
 ![批量补全：在线来源、同步字段与覆盖规则](docs/images/batch.png)
+
+![批量结果：统一主题的筛选菜单与直接审核写入入口](docs/images/batch-review-theme.png)
 
 ## 封面管理
 
@@ -122,7 +126,7 @@ SRT 会生成字幕编号和起止时间；没有时间标签的纯文本只导�
 
 ## 写入、清空与备份
 
-一般标签编辑、在线补全、封面编辑和批量文本处理先生成草稿，点击写入后保存。**单曲详情栏的“删除所有条目”会立即清空文件内的全部标签与图片**，包括自定义信息及可清理的容器元数据；音频内容、文件名、格式、创建时间与修改时间保留。文件名显示的标题仍属于文件名，清空标签不会重命名文件。
+一般标签编辑、封面编辑和批量文本处理先生成草稿，点击写入后保存。批量在线补全也可在结果页直接审核并写入，或选择仅加入草稿。**单曲详情栏的“删除所有条目”会立即清空文件内的全部标签与图片**，包括自定义信息及可清理的容器元数据；音频内容、文件名、格式、创建时间与修改时间保留。文件名显示的标题仍属于文件名，清空标签不会重命名文件。
 
 自动备份**默认开启**，可在偏好设置中关闭并保存。开启时，已有标签或图片的文件修改前会创建完整文件备份；原本没有标签和图片的文件自动跳过。关闭后不再创建新备份或相应历史记录，已有备份仍可恢复。恢复操作会为恢复前的当前文件保留安全备份。
 
@@ -132,7 +136,7 @@ SRT 会生成字幕编号和起止时间；没有时间标签的纯文本只导�
 
 刷新标签、批量匹配、获取候选详情显示已处理数量与进度，支持停止；批量补全可收起到后台并再次查看结果。任务期间仍可浏览队列与编辑草稿，停止后保留已完成的结果。
 
-界面提供浅色与深色主题，点击圆形主题按钮，以按钮为圆心展开切换动画，并记住主题选择。
+界面提供浅色与深色主题，点击圆形主题按钮，以按钮为圆心展开切换动画，并记住主题选择。下拉控件与展开菜单统一主题配色、圆角及樱粉选中态，菜单浮在弹窗和滚动区上方；紧贴控件的键盘焦点框和吸顶工具栏滚动留白避免边缘遮挡。
 
 ![Music Tools 深色主题](docs/images/dark.png)
 

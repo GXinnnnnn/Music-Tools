@@ -176,17 +176,19 @@ function renderBackgroundTask() {
   if (!backgroundTask) {
     if(batchSession) {
       $('#background-task-label').textContent = batchSession.canceled ? '批量任务已停止，已有结果已保留' : '批量补全结果已就绪';
-      $('#background-task-count').textContent = batchSession.items.length + ' 首 · ' + batchSession.items.filter(i=>i.staged).length + ' 首已加入草稿';
+      $('#background-task-count').textContent = batchSession.items.length + ' 首 · ' + batchSession.items.filter(i=>i.written).length + ' 首已写入 · ' + batchSession.items.filter(i=>i.staged&&!i.written&&!i.unchanged).length + ' 首待写入草稿';
       $('#background-task-view').hidden = false;
     }
     return;
   }
   const {kind,done,total,canceling} = backgroundTask;
-  $('#background-task-label').textContent = (canceling ? '正在停止 · ' : '') + ({refresh:'重新读取标签与封面',match:'联网匹配',stage:'获取封面与歌词'}[kind]);
-  $('#background-task-count').textContent = done + ' / ' + total;
-  $('#background-task-progress').max = Math.max(1,total); $('#background-task-progress').value = done;
+  $('#background-task-label').textContent = (canceling ? '正在停止 · ' : '') + (batchSession?.pending === 'write' ? '正在写入已审核标签' : {refresh:'重新读取标签与封面',match:'联网匹配',stage:'获取封面与歌词'}[kind]);
+  const writing=batchSession?.pending==='write';
+  $('#background-task-count').textContent = writing ? '正在保存文件，请等待完成' : done + ' / ' + total;
+  $('#background-task-progress').max = Math.max(1,total);
+  if(writing)$('#background-task-progress').removeAttribute('value');else $('#background-task-progress').value = done;
   $('#background-task-view').hidden = kind === 'refresh';
-  $('#background-task-stop').disabled = !!canceling;
+  $('#background-task-stop').disabled = !!canceling || batchSession?.pending === 'write';
 }
 async function runBackground(kind, total, task) {
   if (busy || backgroundTask) { toast('请等待当前任务完成'); return; }
@@ -195,6 +197,7 @@ async function runBackground(kind, total, task) {
   try { return await task(state.id); }
   catch (error) {
     if ((kind === 'match' || kind === 'stage') && batchSession?.pending) {
+      if(kind==='match')for(const item of batchSession.items)if(item.waiting)receiveBatchResult(null,{path:item.path,error:error.message});
       batchSession.pending = false; batchSession.canceled = true;
       batchSession.message = '任务未完成：' + error.message + '。已完成的结果仍可查看。';
       if ($('#batch-results') && $('#modal').open) finishBatchView();
@@ -204,13 +207,15 @@ async function runBackground(kind, total, task) {
   finally { if (backgroundTask === state) backgroundTask = null; renderBackgroundTask(); updateButtons(); updateBatchSelection(); }
 }
 async function stopBackgroundTask() {
-  if(!backgroundTask)return;
+  if(!backgroundTask || batchSession?.pending === 'write')return;
   backgroundTask.canceling=true; renderBackgroundTask();
   await api('cancel-task',backgroundTask.kind);
 }
 window.music.onTaskProgress(event => {
   if(!backgroundTask || event.operationId !== backgroundTask.id)return;
+  if(event.kind==='match' && batchSession?.pending!=='match')return;
   Object.assign(backgroundTask,{done:event.done,total:event.total}); renderBackgroundTask();
+  if(event.kind==='match' && batchSession?.pending==='match') receiveBatchResult(event.result, event.error);
   if($('#batch-progress') && event.kind !== 'refresh')$('#batch-progress').textContent = (event.kind === 'stage' ? '正在获取封面与歌词 ' : '正在匹配 ') + event.done + ' / ' + event.total;
   if($('#batch-progress-bar') && event.kind !== 'refresh')$('#batch-progress-bar').style.width = (event.done / Math.max(1,event.total)*100)+'%';
 });
@@ -421,9 +426,11 @@ function updateButtons() {
   );
   $$('[data-preview-action="match"],[data-preview-action="extract-lyrics"],[data-preview-action="clear-all-tags"]').forEach(b => b.disabled = locked || (b.dataset.previewAction === 'clear-all-tags' && selected.size > 1));
   $$('[data-action="extract-lyrics"]').forEach(b => { b.disabled = locked; });
+  $$('[data-action="tools"],[data-action="history"],[data-action="settings"]').forEach(b=>b.disabled=busy);
   const empty = !current(active);
+  $$('[data-preview-action="cover"],[data-preview-action="import-lyrics"],[data-preview-action="lyrics-tools"]').forEach(b=>b.disabled=busy||empty);
   $('#preview-card').dataset.empty = String(empty);
-  $('#preview-card').querySelectorAll('[data-tag]').forEach(element => { element.disabled = empty; });
+  $('#preview-card').querySelectorAll('[data-tag]').forEach(element => { element.disabled = empty || busy; });
   if (empty) $('#preview-card').querySelectorAll('[data-preview-action]').forEach(button => { button.disabled = button.dataset.previewAction === 'extract-lyrics' ? locked : true; });
   else $$('[data-preview-action="discard"]').forEach(button => { button.disabled = locked || !previewTargets().some(p => drafts[p]); });
 }
@@ -551,7 +558,12 @@ function removeQueue(all) {
   selected = new Set([...selected].filter((p) => !paths.has(p)));
   active = [...selected].at(-1) || files[0]?.path || null;
   if (batchSession) {
+    const orderedPaths=batchSession.order.map(index=>batchSession.items[index].path);
+    if(batchSession.flushFrame!==undefined)cancelAnimationFrame(batchSession.flushFrame);
+    delete batchSession.flushFrame;batchSession.pendingRows?.clear();
     batchSession.items = batchSession.items.filter(item => current(item.path));
+    batchSession.byPath=new Map(batchSession.items.map((item,index)=>[item.path,index]));
+    batchSession.order=orderedPaths.map(p=>batchSession.byPath.get(p)).filter(index=>index!==undefined);
     if (!batchSession.items.length) batchSession = null;
     renderBackgroundTask();
   }
@@ -574,7 +586,9 @@ function removeQueue(all) {
     },
   );
 }
+let batchToolbarObserver;
 function modal(title, body, footer = "", eyebrow = "MUSIC TOOLS") {
+  batchToolbarObserver?.disconnect();
   const d = $("#modal");
   $("#modal-title").textContent = title;
   $("#modal-eyebrow").textContent = eyebrow;
@@ -582,6 +596,14 @@ function modal(title, body, footer = "", eyebrow = "MUSIC TOOLS") {
   $("#modal-footer").innerHTML = footer;
   if (!d.open) d.showModal();
   hydrate(d);
+  const toolbar = $('#batch-toolbar'), scroller = $('#modal-body');
+  if (toolbar) {
+    // Reserve the actual sticky height, including wrapped controls at narrow widths.
+    const measure = () => scroller.style.setProperty('--batch-toolbar-height', toolbar.offsetHeight + 'px');
+    batchToolbarObserver = new ResizeObserver(measure);
+    batchToolbarObserver.observe(toolbar);
+    measure();
+  }
 }
 function report(title, errors, intro = "") {
   modal(
@@ -605,31 +627,34 @@ async function clearAllTags() {
     else { toast('已删除此音频的全部标签与封面'); status('已清空标签与图片，文件名、格式和文件时间已保留。'); }
   }, settings.backupEnabled ? '正在备份并清空此音频的全部标签…' : '正在清空此音频的全部标签…');
 }
-async function writeFiles(paths) {
-  const jobs = paths
-    .filter((p) => drafts[p])
-    .map((p) => ({ path: p, ...drafts[p], stamp: current(p)?.stamp }));
-  if (!jobs.length) return;
-  await run(async () => {
-    const r = await api("write", jobs, {});
-    for (const item of r.results) {
-      delete drafts[item.path];
-      done.add(item.path);
-      if (item.record) {
-        const i = files.findIndex((f) => f.path === item.path);
-        if (i >= 0) replaceRecord(i, item.record);
-      }
+async function writeDrafts(paths) {
+  const jobs = paths.filter(p => drafts[p]).map(p => ({ path: p, ...drafts[p], stamp: current(p)?.stamp }));
+  if (!jobs.length) return { results: [], errors: [] };
+  const result = await api('write', jobs, {});
+  for (const item of result.results) {
+    delete drafts[item.path];
+    done.add(item.path);
+    if (item.record) {
+      const index = files.findIndex(f => f.path === item.path);
+      if (index >= 0) replaceRecord(index, item.record);
     }
-    await refreshAll(true);
+  }
+  persist();
+  if(result.results.some(item=>!item.record)){
+    try { await refreshAll(true); }
+    catch(error) { toast('写入结果已保存，列表刷新未完成：'+error.message, 'error'); }
+  } else render();
+  return result;
+}
+async function writeFiles(paths) {
+  if (!paths.some(p => drafts[p])) return;
+  await run(async () => {
+    const r = await writeDrafts(paths);
     status(
       `已写入 ${r.results.length} 首，全部封面已刷新${r.errors.length ? " · " + r.errors.length + " 首未完成" : ""}`,
     );
     if (r.errors.length)
-      report(
-        "写入结果",
-        r.errors,
-        `${r.results.length} 首成功；失败项保留草稿，请处理原因后重试。`,
-      );
+      report("写入结果", r.errors, `${r.results.length} 首成功；失败项保留草稿，请处理原因后重试。`);
     else toast(`${r.results.length} 首写入完成，已统一刷新全部封面`);
   }, settings.backupEnabled ? "正在写入音频，已有标签会自动备份…" : "正在写入音频，自动备份已关闭…");
 }
@@ -872,114 +897,213 @@ async function applyReview() {
 }
 let batchSession = null;
 function batchRowHtml(item, index) {
-  const c = item.candidates[item.choice], local = localMeta(item.path);
+  const c = item.candidates[item.choice], local = localMeta(item.path), complete = item.written || item.unchanged;
+  const locked = complete || item.staged || (item.partial && !!drafts[item.path]) || ['stage','write'].includes(batchSession.pending);
   const delta = c?.duration && local.duration ? `${(c.duration-local.duration)>=0?'+':''}${(c.duration-local.duration).toFixed(2)} 秒` : '时长未知';
-  return `<article class="batch-row" data-batch-row="${index}" data-state="${item.staged?'staged':item.error?'error':!c?'empty':item.recommended?'ready':'review'}"><label class="batch-check"><input type="checkbox" data-batch-check="${index}" aria-label="确认采用 ${esc(basename(item.path))}" ${item.checked?'checked':''} ${!c||item.staged?'disabled':''}></label><div class="batch-row-content"><strong>${esc(basename(item.path))}</strong><p class="field-hint">本地 ${duration(local.duration)} · ${item.staged?'已加入草稿':item.recommended?'符合预选条件':'请核对同名作品和发行版本'}</p>${c?`<select class="form-input" data-batch-choice="${index}" aria-label="${esc(basename(item.path))} 的匹配候选" ${item.staged?'disabled':''}>${item.candidates.map((v,i)=>`<option value="${i}" ${i===item.choice?'selected':''}>${esc(v.title)} / ${esc(v.artist)} · ${esc(v.album||'未提供专辑')} · ${duration(v.duration)} · ${v.score}% · ${esc(sources[v.source]||v.source)}</option>`).join('')}</select><p class="batch-evidence"><span>候选 ${duration(c.duration)}</span><span>差 ${delta}</span><span>相似度 ${c.score}%</span></p><details><summary>查看当前与候选差异</summary><table class="detail-table"><tbody>${batchSession.options.fields.map(k=>`<tr><th>${SYNC_FIELDS[k]}</th><td>${esc(k==='cover'?(cover(item.path)?'已有封面':'尚无封面'):String(tags(item.path)[k]||'未填写').slice(0,100))}</td><td>→ ${esc(k==='cover'?(c.coverUrl?'候选提供封面':'详情获取时确认'):String(c[k]||'来源未提供').slice(0,100))}<br><span class="muted">${batchSession.options.overwriteFields.includes(k)?'有结果时覆盖':effectiveSyncFields(item.path,batchSession.options).includes(k)?'仅补空缺':'保留已有值'}</span></td></tr>`).join('')}</tbody></table><p class="field-hint">同一录音可能属于不同专辑、再版或合辑。采用前请核对发行版本。</p></details>`:'<p>未找到候选，可更换关键词后重试。</p>'}<div class="batch-retry"><input class="form-input" data-batch-query="${index}" aria-label="修改 ${esc(basename(item.path))} 搜索词" value="${esc(item.query)}"><button class="button secondary" data-batch-retry="${index}" ${item.staged?'disabled':''}>重试</button></div>${item.error?`<p role="status">${esc(item.error)}</p>`:''}${item.errors?.length?`<details class="result-errors"><summary>${item.errors.length} 个来源提示</summary>${item.errors.map(e=>esc(sources[e.source]||e.source||'来源')+': '+esc(e.message||e.error)).join('<br>')}</details>`:''}</div></article>`;
+  return `<article class="batch-row" data-batch-row="${index}" data-state="${item.written?'written':item.unchanged?'unchanged':item.error?'error':item.staged?'staged':!c?'empty':item.recommended?'ready':'review'}"><label class="batch-check"><input type="checkbox" data-batch-check="${index}" aria-label="确认采用 ${esc(basename(item.path))}" ${item.checked?'checked':''} ${!c||complete||['stage','write'].includes(batchSession.pending)?'disabled':''}></label><div class="batch-row-content"><strong>${esc(basename(item.path))}</strong>${item.partial&&locked&&!complete?'<p class="field-hint">部分内容获取失败，草稿已保留；重试将继续当前候选。更换候选前，请先回主界面撤销该草稿。</p>':''}<p class="field-hint">本地 ${duration(local.duration)} · ${item.written?'已写入文件':item.unchanged?'内容一致，无需写入':item.staged?(item.error?'写入未完成，草稿已保留':'已加入草稿，尚未写入'):item.recommended?'符合预选条件':'请核对同名作品和发行版本'}</p>${c?`<select class="form-input" data-batch-choice="${index}" aria-label="${esc(basename(item.path))} 的匹配候选" ${locked?'disabled':''}>${item.candidates.map((v,i)=>`<option value="${i}" ${i===item.choice?'selected':''}>${esc(v.title)} / ${esc(v.artist)} · ${esc(v.album||'未提供专辑')} · ${duration(v.duration)} · ${v.score}% · ${esc(sources[v.source]||v.source)}</option>`).join('')}</select><p class="batch-evidence"><span>候选 ${duration(c.duration)}</span><span>差 ${delta}</span><span>相似度 ${c.score}%</span></p><details><summary>查看当前与候选差异</summary><table class="detail-table"><tbody>${batchSession.options.fields.map(k=>`<tr><th>${SYNC_FIELDS[k]}</th><td>${esc(k==='cover'?(cover(item.path)?'已有封面':'尚无封面'):String(tags(item.path)[k]||'未填写').slice(0,100))}</td><td>→ ${esc(k==='cover'?(c.coverUrl?'候选提供封面':'详情获取时确认'):String(c[k]||'来源未提供').slice(0,100))}<br><span class="muted">${batchSession.options.overwriteFields.includes(k)?'有结果时覆盖':effectiveSyncFields(item.path,batchSession.options).includes(k)?'仅补空缺':'保留已有值'}</span></td></tr>`).join('')}</tbody></table><p class="field-hint">同一录音可能属于不同专辑、再版或合辑。采用前请核对发行版本。</p></details>`:'<p>未找到候选，可更换关键词后重试。</p>'}<div class="batch-retry"><input class="form-input" data-batch-query="${index}" aria-label="修改 ${esc(basename(item.path))} 搜索词" value="${esc(item.query)}" ${locked||batchSession.pending?'disabled':''}><button class="button secondary" data-batch-retry="${index}" ${locked||batchSession.pending?'disabled':''}>重试</button></div>${item.error?`<p role="status">${esc(item.error)}</p>`:''}${item.errors?.length?`<details class="result-errors"><summary>${item.errors.length} 个来源提示</summary>${item.errors.map(e=>esc(sources[e.source]||e.source||'来源')+': '+esc(e.message||e.error)).join('<br>')}</details>`:''}</div></article>`;
 }
-function renderBatchRows() {
-  if (!batchSession || !$('#batch-results')) return;
-  $('#batch-results').innerHTML = batchSession.items.map(batchRowHtml).join('');
-  $('#batch-results').onchange = e => {
-    const check=e.target.dataset.batchCheck, choice=e.target.dataset.batchChoice;
+function receiveBatchResult(result, error) {
+  const session=batchSession, p=result?.path||error?.path;
+  const index=session?.byPath.get(p), item=session?.items[index];
+  // The final response repeats streamed results. Never reset a choice already made by the user.
+  if(!item||!item.waiting)return;
+  const recommended=result?.recommendedIndex===0&&result?.candidates[0]?.score>=session.policy.threshold;
+  Object.assign(item,{waiting:false,candidates:result?.candidates||[],errors:result?.errors||[],error:error?.error||error?.message||'',recommended,
+    checked:session.selectionMode==='all'?!!result?.candidates?.length:session.selectionMode==='none'?false:recommended});
+  session.order.push(index);matches[p]=item.candidates;matchPolicies[p]=structuredClone(session.options);
+  if($('#batch-results')&&$('#modal').open){
+    (session.pendingRows??=new Set()).add(index);
+    if(session.flushFrame===undefined)session.flushFrame=requestAnimationFrame(()=>{
+      delete session.flushFrame;
+      const indices=[...session.pendingRows];session.pendingRows.clear();
+      if(batchSession===session&&$('#modal').open)renderBatchRows(indices);
+    });
+  }
+}
+function renderBatchRows(indices = batchSession?.order || [], refresh = false) {
+  if(!batchSession||!$('#batch-results'))return;
+  const list=$('#batch-results');
+  for(const index of indices){
+    const item=batchSession.items[index];if(item.waiting)continue;
+    const row=list.querySelector('[data-batch-row="'+index+'"]');
+    if(!row)list.insertAdjacentHTML('beforeend',batchRowHtml(item,index));
+    else if(refresh){
+      const expanded=row.querySelector('details')?.open, query=row.querySelector('[data-batch-query]')?.value;
+      row.outerHTML=batchRowHtml(item,index);
+      const next=list.querySelector('[data-batch-row="'+index+'"]');
+      if(expanded&&next.querySelector('details'))next.querySelector('details').open=true;
+      if(query!==undefined)next.querySelector('[data-batch-query]').value=query;
+    }
+  }
+  list.onchange=e=>{
+    const check=e.target.dataset.batchCheck,choice=e.target.dataset.batchChoice;
     if(check!==undefined)batchSession.items[Number(check)].checked=e.target.checked;
-    if(choice!==undefined){const item=batchSession.items[Number(choice)];item.choice=Number(e.target.value);item.checked=false;item.recommended=false;renderBatchRows();}
+    if(choice!==undefined){
+      const index=Number(choice),item=batchSession.items[index];item.choice=Number(e.target.value);item.checked=false;item.recommended=false;
+      renderBatchRows([index],true);$('[data-batch-choice="'+index+'"]').focus();
+    }
     updateBatchSelection();
   };
-  $('#batch-results').onclick = async e => {
-    const button=e.target.closest('[data-batch-retry]');if(!button)return;
-    const index=Number(button.dataset.batchRetry),item=batchSession.items[index];
-    const value=$(`[data-batch-query="${index}"]`).value.trim();if(!value)return;
-    button.disabled=true;
-    try{const r=await api('search',value,{...batchSession.options,local:localMeta(item.path),limit:8});item.query=value;item.candidates=r.candidates;item.errors=r.errors;item.error='';item.choice=0;item.checked=false;item.recommended=false;matches[item.path]=r.candidates;}
-    catch(e){item.error=e.message;}
-    renderBatchRows();updateBatchSelection();
+  list.onclick=async e=>{
+    const button=e.target.closest('[data-batch-retry]');if(!button||batchSession.pending||backgroundTask||busy)return;
+    const session=batchSession,index=Number(button.dataset.batchRetry),item=session.items[index];
+    const value=$('[data-batch-query="'+index+'"]').value.trim();if(!value)return;
+    item.retrying=true;button.disabled=true;updateBatchSelection();
+    try{const r=await api('search',value,{...session.options,local:localMeta(item.path),limit:8});item.query=value;item.candidates=r.candidates;item.errors=r.errors;item.error='';item.choice=0;item.checked=false;item.recommended=false;matches[item.path]=r.candidates;}
+    catch(error){item.error=error.message;}
+    finally{item.retrying=false;}
+    if(session===batchSession){renderBatchRows([index],true);updateBatchSelection();}
   };
   updateBatchSelection();
 }
 function updateBatchSelection(){
   if(!batchSession)return;
-  const count=batchSession.items.filter(i=>i.checked&&!i.staged&&i.candidates[i.choice]).length;
-  const button=$('#apply-batch');if(button){button.disabled=!count||busy||!!backgroundTask;button.textContent=`采用已勾选的 ${count} 首 → 草稿`;}
+  const session=batchSession,chosen=session.items.filter(i=>i.checked&&!i.written&&!i.unchanged&&i.candidates[i.choice]);
+  const retrying=session.items.some(i=>i.retrying);
+  const count=chosen.length,unstaged=chosen.filter(i=>!i.staged).length,locked=busy||!!backgroundTask||retrying;
+  const searching=session.pending==='match';
+  const stage=$('#apply-batch');if(stage){stage.disabled=!unstaged||locked;stage.textContent='仅加入草稿';}
+  const write=$('#write-batch');if(write){write.disabled=!count||locked;write.textContent=searching?'检索中 · 已勾选 '+count+' 首':
+    '审核并'+(session.options.overwriteFields.length?'覆盖':'写入')+' '+count+' 首';}
   const mode=$('#batch-filter')?.value||'all';
-  $$('[data-batch-row]').forEach(row=>row.hidden=mode!=='all'&&row.dataset.state!==mode);
-  if($('#batch-summary'))$('#batch-summary').textContent=`${batchSession.items.length} 首已搜索 · ${count} 首已勾选 · ${batchSession.items.filter(i=>i.staged).length} 首已生成草稿`;
+  $$('[data-batch-row]').forEach(row=>{
+    const item=session.items[Number(row.dataset.batchRow)];
+    const matches=mode==='staged'?item.staged&&!item.written&&!item.unchanged:row.dataset.state===mode;
+    row.hidden=mode!=='all'&&!matches;
+    const check=row.querySelector('[data-batch-check]');if(check)check.checked=item.checked;
+    const retry=row.querySelector('[data-batch-retry]'),query=row.querySelector('[data-batch-query]');
+    if(retry)retry.disabled=!!session.pending||retrying||item.written||item.unchanged||item.staged||(item.partial&&!!drafts[item.path]);
+    if(query)query.disabled=retry.disabled;
+  });
+  const received=session.order.length;
+  if($('#batch-summary'))$('#batch-summary').textContent=(searching?'检索中 · 已返回 '+received+' / '+session.items.length+' 首':session.items.length+' 首结果')+
+    ' · '+count+' 首已勾选 · '+session.items.filter(i=>i.written).length+' 首已写入 · '+session.items.filter(i=>i.staged&&!i.written&&!i.unchanged).length+' 首待写入草稿';
+}
+function bindBatchToolbar(){
+  $('#batch-filter').onchange=updateBatchSelection;
+  $('#batch-select-all').onclick=()=>{batchSession.selectionMode='all';for(const item of batchSession.items)if(!item.written&&!item.unchanged&&item.candidates[item.choice])item.checked=true;updateBatchSelection();};
+  $('#batch-unselect').onclick=()=>{batchSession.selectionMode='none';for(const item of batchSession.items)item.checked=false;updateBatchSelection();};
+}
+function batchFooterHtml(searching=false){
+  return (searching?'<button class="button secondary" data-modal-action="background-task">后台继续</button><button class="button secondary" data-modal-action="cancel-search">停止检索</button>':'<button class="button secondary" data-modal-action="close">关闭</button>')+
+    '<button class="button secondary" id="apply-batch">仅加入草稿</button><button class="button primary" id="write-batch">审核并写入</button>';
+}
+function bindBatchFooter(){
+  $('#apply-batch').onclick=()=>stageBatch();$('#write-batch').onclick=()=>stageBatch(true);
 }
 async function batchMatch() {
   const paths=[...selected];if(!paths.length){toast('请先选中要补全的音频');return;}
   if(paths.length===1)return openMatch(paths[0]);if(busy||backgroundTask)return;
   batchSession=null;
-  modal(`批量补全 ${paths.length} 首`,`<p class="modal-description">先搜索、逐首核对候选并勾选，再生成草稿。仅文件名不能证明录音身份；未勾选的项目保持原样。</p>${providerOptions()}${policyOptionsHtml()}<div class="inline-status" id="batch-progress" role="status" aria-live="polite">准备搜索 ${paths.length} 首音频</div><div class="progress"><div id="batch-progress-bar"></div></div><div id="batch-toolbar" hidden><span id="batch-summary"></span><div class="mini-actions"><select id="batch-filter" class="form-input" aria-label="筛选匹配状态"><option value="all">全部结果</option><option value="ready">符合预选条件</option><option value="review">待核对</option><option value="empty">无结果</option><option value="error">失败</option><option value="staged">已生成草稿</option></select><button class="button secondary" id="batch-select-all">勾选所有有候选项</button><button class="button secondary" id="batch-unselect">取消勾选</button></div></div><div id="batch-results"></div>`,`<button class="button secondary" data-modal-action="background-task">后台继续</button><button class="button secondary" data-modal-action="cancel-search">停止任务</button><button class="button primary" id="start-batch">开始匹配</button>`,'BATCH MATCH / REVIEW FIRST');
-  bindPolicyControls();
+  modal('批量补全 '+paths.length+' 首', '<p class="modal-description">检索结果会逐条显示，可边等待边核对、勾选；检索完成后，直接在右下角补全或覆盖所选音频。</p><details id="batch-settings" open><summary>搜索来源与同步规则</summary>'+providerOptions()+policyOptionsHtml()+'</details><div class="inline-status" id="batch-progress" role="status" aria-live="polite">准备搜索 '+paths.length+' 首音频</div><div class="progress"><div id="batch-progress-bar"></div></div>'+batchToolbarHtml()+'<div id="batch-results"></div>',
+    '<button class="button secondary" data-modal-action="close">关闭</button><button class="button primary" id="start-batch">开始匹配</button>','BATCH MATCH / REVIEW FIRST');
+  $('#batch-toolbar').hidden=true;bindPolicyControls();
   $('#start-batch').onclick=()=>{
-    const options=structuredClone({...completionOptions(),limit:50});
-    if(!canComplete(options,$('#batch-progress')))return;
+    const options=structuredClone({...completionOptions(),limit:50});if(!canComplete(options,$('#batch-progress')))return;
     return runBackground('match',paths.length,async operationId=>{
-    $('#start-batch').disabled=true;
-    lockPolicyControls();
-    // Freeze field and provider choices for search, retries, and staging.
-    const policy={...structuredClone(options),threshold:settings.threshold};
-    batchSession={options,policy,pending:'match',canceled:false,items:[]};
-    const r=await api('batch-match',paths.map(p=>({path:p,query:searchQuery(p),local:localMeta(p)})),{...options,operationId});
-    const byPath=new Map(r.results.map(item=>[item.path,item]));
-    batchSession={options,policy,pending:false,canceled:r.canceled,items:paths.map(p=>{const item=byPath.get(p),error=r.errors.find(e=>e.path===p);const recommended=item?.recommendedIndex===0&&item?.candidates[0]?.score>=policy.threshold;return {path:p,query:searchQuery(p),candidates:item?.candidates||[],errors:item?.errors||[],error:error?.error||(!item?'尚未搜索':''),choice:0,checked:recommended,recommended,staged:false};})};
-    for(const item of batchSession.items){matches[item.path]=item.candidates;matchPolicies[item.path]=structuredClone(options);}
-    if($('#batch-results') && $('#modal').open) finishBatchView();
-    else toast(r.canceled?'匹配已停止，已完成的结果已保留':'匹配已完成，可查看并核对候选','',{label:'查看结果',run:showBatchResults});
-    renderPreview();updateButtons();status('匹配已完成，请逐首核对并勾选。');
-  }).finally(updateBatchSelection);
+      lockPolicyControls();$('#batch-settings').open=false;
+      const policy={...structuredClone(options),threshold:settings.threshold};
+      const session=batchSession={options,policy,pending:'match',canceled:false,order:[],byPath:new Map(paths.map((p,i)=>[p,i])),
+        items:paths.map(p=>({path:p,query:searchQuery(p),waiting:true,candidates:[],errors:[],error:'',choice:0,checked:false,recommended:false,staged:false}))};
+      $('#batch-toolbar').hidden=false;bindBatchToolbar();
+      $('#modal-footer').innerHTML=batchFooterHtml(true);bindBatchFooter();updateBatchSelection();
+      $('#batch-progress').textContent='正在检索 0 / '+paths.length+' · 已返回的候选可立即核对与勾选';
+      const r=await api('batch-match',paths.map(p=>({path:p,query:searchQuery(p),local:localMeta(p)})),{...options,operationId});
+      if(batchSession!==session)return;
+      for(const item of r.results)receiveBatchResult(item);
+      for(const error of r.errors)receiveBatchResult(null,error);
+      for(const item of session.items)if(item.waiting)receiveBatchResult(null,{path:item.path,error:r.canceled?'已停止，尚未检索':'未返回检索结果，请重试'});
+      session.pending=false;session.canceled=r.canceled;
+      if($('#batch-results')&&$('#modal').open)finishBatchView();
+      else toast(r.canceled?'检索已停止，已有结果已保留':'检索已完成，可查看并核对候选','',{label:'查看结果',run:showBatchResults});
+      renderPreview();updateButtons();status(r.canceled?'检索已停止，已有结果可继续勾选写入。':'检索已完成，直接写入已勾选的结果。');
+    }).finally(updateBatchSelection);
   };
 }
 function batchToolbarHtml() {
-  return '<div id="batch-toolbar"><span id="batch-summary"></span><div class="mini-actions"><select id="batch-filter" class="form-input" aria-label="筛选匹配状态"><option value="all">全部结果</option><option value="ready">符合预选条件</option><option value="review">待核对</option><option value="empty">无结果</option><option value="error">失败</option><option value="staged">已生成草稿</option></select><button class="button secondary" id="batch-select-all">勾选所有有候选项</button><button class="button secondary" id="batch-unselect">取消勾选</button></div></div>';
+  return '<div id="batch-toolbar"><span id="batch-summary"></span><div class="mini-actions"><select id="batch-filter" class="form-input" aria-label="筛选匹配状态"><option value="all">全部结果</option><option value="ready">符合预选条件</option><option value="review">待核对</option><option value="empty">无结果</option><option value="error">失败</option><option value="staged">待写入草稿</option><option value="written">已写入文件</option><option value="unchanged">无需修改</option></select><button class="button secondary" id="batch-select-all">全选有候选项</button><button class="button secondary" id="batch-unselect">取消勾选</button></div></div>';
 }
-function finishBatchView() {
-  if(!batchSession || !$('#batch-results'))return;
-  $('#batch-progress').textContent=batchSession.message || ((batchSession.canceled?'已停止':'搜索完成')+'，'+batchSession.items.length+' 首结果已保留。核对后采用到草稿，再点击写入。');
+function finishBatchView(refresh=false) {
+  if(!batchSession||!$('#batch-results'))return;
+  $('#modal-title').textContent='批量补全 · 核对结果';
+  if(!batchSession.canceled&&$('#batch-progress-bar'))$('#batch-progress-bar').style.width='100%';
+  $('#batch-progress').textContent=batchSession.message||(batchSession.canceled?'检索已停止，已有候选和未完成项已保留，可继续勾选或重试。':'检索完成，'+batchSession.order.length+' 首结果已保留。核对并勾选后，直接在右下角写入文件。');
   $('#batch-toolbar').hidden=false;
-  $('#modal-footer').innerHTML='<button class="button secondary" data-modal-action="close">完成审核</button><button class="button primary" id="apply-batch">采用勾选项 → 草稿</button>';
-  $('#apply-batch').onclick=()=>stageBatch();
-  $('#batch-filter').onchange=updateBatchSelection;
-  $('#batch-select-all').onclick=()=>{for(const item of batchSession.items)if(!item.staged&&item.candidates[item.choice])item.checked=true;renderBatchRows();};
-  $('#batch-unselect').onclick=()=>{for(const item of batchSession.items)item.checked=false;renderBatchRows();};
-  renderBatchRows();
+  $('#modal-footer').innerHTML=batchFooterHtml();bindBatchFooter();bindBatchToolbar();
+  renderBatchRows(batchSession.order,refresh);
 }
 function showBatchResults() {
   if(!batchSession)return;
-  const pending=!!batchSession.pending;
-  modal(pending?'批量补全正在进行':'批量补全 · 核对结果', '<p class="modal-description">'+(pending?'任务在后台继续，可收起窗口后浏览队列。':'候选结果已保留。勾选采用后只生成草稿，点击写入才会修改文件。')+'</p><div class="inline-status" id="batch-progress" role="status" aria-live="polite"></div><div class="progress"><div id="batch-progress-bar"></div></div>'+batchToolbarHtml()+'<div id="batch-results"></div>',pending?'<button class="button secondary" data-modal-action="background-task">后台继续</button><button class="button secondary" data-modal-action="cancel-search">停止任务</button>':'','BATCH MATCH / REVIEW FIRST');
-  if(pending){$('#batch-toolbar').hidden=true;renderBackgroundTask();if(backgroundTask)$('#batch-progress').textContent='正在处理 '+backgroundTask.done+' / '+backgroundTask.total;}
-  else finishBatchView();
+  const pending=!!batchSession.pending,searching=batchSession.pending==='match',writing=batchSession.pending==='write';
+  modal(pending?'批量补全正在进行':'批量补全 · 核对结果','<p class="modal-description">'+(searching?'结果逐条返回，可立即核对、勾选；全部检索完成后直接写入。':pending?'任务在后台继续，可收起窗口后浏览队列。':'核对并勾选结果，直接在右下角写入；所选字段与覆盖规则保持本次搜索设置。')+'</p><div class="inline-status" id="batch-progress" role="status" aria-live="polite"></div><div class="progress"><div id="batch-progress-bar"></div></div>'+batchToolbarHtml()+'<div id="batch-results"></div>',
+    searching?batchFooterHtml(true):pending?'<button class="button secondary" data-modal-action="background-task">后台继续</button>'+(writing?'<button class="button primary" disabled>正在写入文件…</button>':'<button class="button secondary" data-modal-action="cancel-search">停止任务</button>'):'','BATCH MATCH / REVIEW FIRST');
+  if(pending){
+    $('#batch-toolbar').hidden=!searching;
+    if(searching){bindBatchToolbar();bindBatchFooter();}
+    renderBatchRows();renderBackgroundTask();
+    if(backgroundTask){$('#batch-progress').textContent=writing?'正在写入已审核标签，请等待完成。':'正在处理 '+backgroundTask.done+' / '+backgroundTask.total;$('#batch-progress-bar').style.width=(backgroundTask.done/Math.max(1,backgroundTask.total)*100)+'%';}
+  }else finishBatchView();
 }
-async function stageBatch() {
-  const session=batchSession;if(!session)return;
-  // Freeze the reviewed candidate objects and policy before asynchronous enrichment.
-  const targets=session.items.filter(i=>i.checked&&!i.staged&&i.candidates[i.choice]).map(i=>({item:i,candidate:{...i.candidates[i.choice]}}));
-  if(!targets.length)return;
+async function stageBatch(writeAfter = false) {
+  const session=batchSession;if(!session||busy||backgroundTask||session.items.some(i=>i.retrying))return;
+  // Freeze both the write scope and candidate choices before any asynchronous work.
+  const chosen=session.items.filter(i=>i.checked&&!i.written&&!i.unchanged&&i.candidates[i.choice]&&(!i.staged||writeAfter));
+  for(const item of chosen)if(item.staged&&(item.partial||item.stagedDraft!==JSON.stringify(drafts[item.path]||null)))item.staged=false;
+  const targets=chosen.filter(i=>!i.staged).map(item=>({item,candidate:{...item.candidates[item.choice]}}));
+  if(!chosen.length)return;
   await runBackground('stage',targets.length,async operationId=>{
     session.canceled=false;session.pending='stage';
-    const accepted=structuredClone(session.options);let success=0;const warnings=[];
+    const accepted=structuredClone(session.options);let success=0,written=0,unchanged=0;const warnings=[];
     $('#modal-footer').innerHTML='<button class="button secondary" data-modal-action="background-task">后台继续</button><button class="button secondary" id="stop-stage">停止获取，保留已有草稿</button>';
     $('#stop-stage').onclick=()=>{session.canceled=true;api('cancel-search').catch(()=>{});};
     $('#batch-toolbar').hidden=true;
     $$('[data-batch-check], [data-batch-choice], [data-batch-retry]').forEach(e=>e.disabled=true);
     const payload=targets.map(({item,candidate})=>({path:item.path,candidate,local:localMeta(item.path)}));
-    const response=await api('batch-stage',payload,{...accepted,operationId}).catch(error=>({results:[],errors:payload.map(item=>({path:item.path,message:error.message})),canceled:session.canceled}));
+    const response=payload.length?await api('batch-stage',payload,{...accepted,operationId}).catch(error=>({results:[],errors:payload.map(item=>({path:item.path,message:error.message})),canceled:session.canceled})):{results:[],errors:[]};
     const targetMap=new Map(targets.map(({item})=>[item.path,item]));
     for(const result of response.results||[]){
       const item=targetMap.get(result.path);if(!item)continue;
-      // Server returns only allowed patches; recheck against edits made during the request.
       const planned=syncPatch(item.path,result.tags||{},accepted);
       const image=planned.useCover&&hasValue(result.cover)?result.cover:undefined;
-      patch([item.path],planned.tags,image,false);item.staged=true;item.checked=false;success++;
-      if(result.errors?.length){item.errors.push(...result.errors);warnings.push(...result.errors.map(error=>({path:item.path,message:error.message||error.error})));}
+      patch([item.path],planned.tags,image,false);
+      item.partial=!!result.errors?.length;
+      item.staged=!writeAfter||!item.partial;item.stagedDraft=JSON.stringify(drafts[item.path]||null);
+      item.error=item.partial?(result.errors[0].message||result.errors[0].error):'';success++;
+      if(!writeAfter)item.checked=false;
+      if(item.partial){item.errors.push(...result.errors);warnings.push(...result.errors.map(error=>({path:item.path,message:error.message||error.error})));}
     }
     for(const error of response.errors||[]){const item=targetMap.get(error.path);if(item)item.error=error.message||error.error;warnings.push(error);}
-    session.canceled=session.canceled||response.canceled;session.pending=false;
-    session.message=(session.canceled?'已停止，已有草稿保留':'获取完成')+' · 本次 '+success+' 首已加入草稿'+(warnings.length?' · '+warnings.length+' 条来源提示':'')+'。审核后点击主界面的写入。';
-    render();
-    if($('#batch-results') && $('#modal').open) finishBatchView();
+    session.canceled=session.canceled||response.canceled;
+    if(writeAfter&&!session.canceled){
+      // Failed lookups must never write a pre-existing unrelated draft.
+      const ready=chosen.filter(item=>item.staged);
+      const paths=ready.filter(item=>drafts[item.path]).map(item=>item.path);
+      for(const item of ready)if(!drafts[item.path]){item.unchanged=true;item.checked=false;item.error='';unchanged++;}
+      if(paths.length){
+        session.pending='write';busy=true;renderBackgroundTask();updateButtons();
+        const message='正在写入已审核的 '+paths.length+' 首音频'+(settings.backupEnabled?'，已有标签会自动备份…':'，自动备份已关闭…');
+        status(message);
+        if($('#batch-progress'))$('#batch-progress').textContent=message;
+        if($('#batch-progress-bar'))$('#batch-progress-bar').style.width='0%';
+        if($('#batch-results')&&$('#modal').open)$('#modal-footer').innerHTML='<button class="button secondary" data-modal-action="background-task">后台继续</button><button class="button primary" disabled>正在写入 '+paths.length+' 首…</button>';
+        try{
+          const readyMap=new Map(ready.map(item=>[item.path,item]));
+          const result=await writeDrafts(paths).catch(error=>({results:[],errors:paths.map(path=>({path,message:error.message}))}));
+          for(const saved of result.results){const item=readyMap.get(saved.path);if(item){item.written=true;item.checked=false;item.error='';written++;}}
+          for(const error of result.errors){const item=readyMap.get(error.path);if(item)item.error=error.message||error.error;}
+        }finally{busy=false;}
+      }
+    }
+    session.pending=false;
+    const failed=chosen.filter(i=>i.error&&!i.written).length;
+    session.message=session.canceled?'已停止，已有草稿保留，未自动写入文件。':writeAfter?
+      '本次已写入 '+written+' 首'+(unchanged?' · '+unchanged+' 首内容一致，无需修改':'')+(failed?' · '+failed+' 首未完成，请查看对应错误；写入失败项已保留草稿，可再次勾选重试':'')+(warnings.length?' · '+warnings.length+' 条来源提示':'')+'。':
+      '获取完成 · 本次 '+success+' 首已加入草稿'+(warnings.length?' · '+warnings.length+' 条来源提示':'')+'，尚未写入文件。';
+    if($('#batch-progress-bar'))$('#batch-progress-bar').style.width='100%';
+    render();renderBackgroundTask();
+    if($('#batch-results') && $('#modal').open) finishBatchView(true);
     else toast(session.message,'',{label:'查看结果',run:showBatchResults});
-    status('本次已为 '+success+' 首生成草稿，尚未写入。');
+    status(session.message);
   });
   updateBatchSelection();
 }
@@ -1273,6 +1397,7 @@ function updateNav() {
   );
 }
 async function handleAction(action) {
+  if(busy&&['tools','history','settings','extract-lyrics'].includes(action))return toast('正在处理文件，请等待完成');
   if (action === "import") return importFiles();
   if (action === "import-folder") return importFiles(true);
   if (action === "demo")
@@ -1353,6 +1478,7 @@ function coverManager() {
   };
 }
 async function handlePreview(action) {
+  if(busy&&!['close','locate','play'].includes(action))return toast('正在处理文件，请等待完成');
   if (action === "close") {
     selected.clear();
     active = files[0]?.path || null;
@@ -1517,8 +1643,9 @@ $("#modal-close").onclick = () => $("#modal").close();
 $("#modal").addEventListener("close", () => {
   const dialog=$('#modal');
   if(dialog.open)return;
+  batchToolbarObserver?.disconnect();
   if(dialog.dataset.backgroundTask==='true'){delete dialog.dataset.backgroundTask;return;}
-  if($('#batch-results') && batchSession?.pending){batchSession.canceled=true;api('cancel-search').catch(()=>{});}
+  if($('#batch-results') && batchSession?.pending && batchSession.pending!=='write'){batchSession.canceled=true;api('cancel-search').catch(()=>{});}
   else if(!backgroundTask)api('cancel-search').catch(()=>{});
 });
 $("#player").onended = () => {
@@ -1529,7 +1656,7 @@ $("#player").onerror = () => {
   playing = null;
 };
 document.addEventListener("keydown", (e) => {
-  if (e.target.matches("input,textarea,select") || $("#modal").open) return;
+  if (e.target.closest("input,textarea,select") || $("#modal").open) return;
   const ctrl = e.ctrlKey || e.metaKey;
   if (ctrl && e.key.toLowerCase() === "o") {
     e.preventDefault();
